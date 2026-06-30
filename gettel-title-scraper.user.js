@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.1.0
+// @version      1.2.0
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -21,13 +21,21 @@
   const KEY_RUNNING   = 'gts_running';    // bool
   const KEY_CURRENT   = 'gts_current';    // string – PID actively being processed
 
-  const DELAY_MIN_MS  = 2500;
-  const DELAY_MAX_MS  = 5000;
+  const DELAY_MIN_MS  = 3000;
+  const DELAY_MAX_MS  = 7000;
+  const LONG_PAUSE_CHANCE = 0.15;  // 15% chance of a longer human-like pause
+  const LONG_PAUSE_MIN_MS = 12000;
+  const LONG_PAUSE_MAX_MS = 25000;
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   function randDelay() {
-    return DELAY_MIN_MS + Math.random() * (DELAY_MAX_MS - DELAY_MIN_MS);
+    if (Math.random() < LONG_PAUSE_CHANCE) {
+      return LONG_PAUSE_MIN_MS + Math.random() * (LONG_PAUSE_MAX_MS - LONG_PAUSE_MIN_MS);
+    }
+    // Skew toward the lower end (humans tend to act sooner rather than later)
+    const r = Math.random() * Math.random();
+    return DELAY_MIN_MS + r * (DELAY_MAX_MS - DELAY_MIN_MS);
   }
 
   function getResults() {
@@ -346,36 +354,16 @@
 
     if (state === 'downloaded') {
       // Extract filename from button value: "Download {filename}.pdf"
-      const raw          = button.value || '';
-      const siteFilename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
-      const saveFilename = `${pid}_${siteFilename}`;
+      const raw      = button.value || '';
+      const filename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
 
-      // Submit the form via fetch so we can control the saved filename
-      const form     = button.closest('form');
-      const action   = form ? (form.action || location.href) : location.href;
-      const formData = form ? new FormData(form) : new FormData();
-      formData.set('downloadLincPDF', button.value);
-
+      // Use a natural form submit — fetch() would send different Sec-Fetch-* headers
+      // and look like automation. The CSV records the PID→filename mapping instead.
       panelLog(`${pid} → downloading…`);
+      button.click();
 
-      fetch(action, { method: 'POST', body: formData, credentials: 'include' })
-        .then(r => r.ok ? r.blob() : Promise.reject(`HTTP ${r.status}`))
-        .then(blob => {
-          const url = URL.createObjectURL(blob);
-          const a   = document.createElement('a');
-          a.href     = url;
-          a.download = saveFilename;
-          a.click();
-          URL.revokeObjectURL(url);
-          markResult(pid, 'downloaded', saveFilename);
-          setTimeout(processNext, randDelay());
-        })
-        .catch(err => {
-          log(`PID ${pid}: fetch failed (${err}), falling back to button click`);
-          button.click();
-          markResult(pid, 'downloaded', siteFilename);
-          setTimeout(processNext, randDelay());
-        });
+      markResult(pid, 'downloaded', filename);
+      setTimeout(processNext, randDelay());
 
     } else if (state === 'purchase') {
       log(`PID ${pid}: clicking purchase button`);
