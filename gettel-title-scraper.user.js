@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.2.0
+// @version      1.3.0
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -20,6 +20,8 @@
   const KEY_QUEUE     = 'gts_queue';      // string[] – PIDs still to process
   const KEY_RUNNING   = 'gts_running';    // bool
   const KEY_CURRENT   = 'gts_current';    // string – PID actively being processed
+  const KEY_SESSION   = 'gts_session';    // string – sessionid captured at batch start
+  const KEY_STUCK_AT  = 'gts_stuck_at';   // number – timestamp of last page-load while running
 
   const DELAY_MIN_MS  = 3000;
   const DELAY_MAX_MS  = 7000;
@@ -68,11 +70,35 @@
 
   function setCurrentPid(pid) {
     GM_setValue(KEY_CURRENT, pid);
+    GM_setValue(KEY_STUCK_AT, 0);  // reset retry counter for the new PID
   }
 
+  // Returns true if this PID has exceeded its retry budget (and should be
+  // abandoned as an error) so a single bad page can't hang the whole batch.
+  function bumpRetryAndCheckExceeded(maxRetries = 4) {
+    const count = GM_getValue(KEY_STUCK_AT, 0) + 1;
+    GM_setValue(KEY_STUCK_AT, count);
+    return count > maxRetries;
+  }
+
+  // Pulls sessionid from the current URL if present, falls back to whatever
+  // was last captured (some pages, e.g. the cart confirmation, don't carry it).
   function getSessionId() {
-    const m = location.search.match(/sessionid=([^&]+)/);
-    return m ? m[1] : null;
+    const urlMatch = (location.search + location.pathname).match(/sessionid=([^&\s]+)/);
+    if (urlMatch) {
+      GM_setValue(KEY_SESSION, urlMatch[1]);
+      return urlMatch[1];
+    }
+    // Also check any link on the page that happens to carry a sessionid
+    const linkWithSession = [...document.querySelectorAll('a[href*="sessionid="]')][0];
+    if (linkWithSession) {
+      const m = linkWithSession.getAttribute('href').match(/sessionid=([^&\s]+)/);
+      if (m) {
+        GM_setValue(KEY_SESSION, m[1]);
+        return m[1];
+      }
+    }
+    return GM_getValue(KEY_SESSION, null);
   }
 
   function parsePids(raw) {
@@ -384,16 +410,28 @@
     const pid = getCurrentPid();
     if (!pid) return;
 
-    // Find the back-link to the detail page for the current PID
+    // Find the back-link to the detail page for the current PID (exact pid match,
+    // not substring, so PID 123 doesn't accidentally match a link for PID 1234)
     const link = [...document.querySelectorAll('a')].find(a => {
       const href = a.getAttribute('href') || '';
-      return href.includes('WebCore_MainDetails') && href.includes(`pid=${pid}`);
+      if (!href.includes('WebCore_MainDetails')) return false;
+      try {
+        const url = new URL(href, location.origin);
+        return url.searchParams.get('pid') === pid;
+      } catch (_) {
+        return false;
+      }
     });
 
     if (link) {
       log(`PID ${pid}: on cart page, clicking back-link`);
       panelLog(`${pid} → cart → returning to detail`);
       setTimeout(() => link.click(), randDelay());
+    } else if (bumpRetryAndCheckExceeded()) {
+      log(`PID ${pid}: stuck on cart page after repeated retries, marking error`);
+      panelLog(`${pid} → error (stuck on cart page)`);
+      markResult(pid, 'error');
+      setTimeout(processNext, randDelay());
     } else {
       // Fallback: navigate directly
       log(`PID ${pid}: back-link not found on cart page, navigating directly`);
@@ -433,7 +471,12 @@
       // We're on some other page (e.g. dashboard) while a run is active —
       // resume by navigating to the current PID if one is set, else processNext.
       const pid = getCurrentPid();
-      if (pid) {
+      if (pid && bumpRetryAndCheckExceeded()) {
+        log(`PID ${pid}: stuck off-flow after repeated retries, marking error`);
+        panelLog(`${pid} → error (stuck, repeated bad navigation)`);
+        markResult(pid, 'error');
+        setTimeout(processNext, randDelay());
+      } else if (pid) {
         log(`On non-processing page during run, resuming with PID ${pid}`);
         setTimeout(() => navigateToDetail(pid), randDelay());
       } else {
