@@ -173,7 +173,7 @@
       <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
         <button id="gts-btn-start"  style="${btnStyle('#2a6496')}">Start New Batch</button>
         <button id="gts-btn-resume" style="${btnStyle('#28783a')}">Resume</button>
-        <button id="gts-btn-pause"  style="${btnStyle('#7a3030');display:none}">Pause / Stop</button>
+        <button id="gts-btn-pause"  style="${btnStyle('#7a3030', 'display:none')}">Pause / Stop</button>
         <button id="gts-btn-export" style="${btnStyle('#555')}">Export CSV</button>
       </div>
 
