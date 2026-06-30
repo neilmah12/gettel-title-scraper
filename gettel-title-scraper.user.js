@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.0.0
+// @version      1.1.0
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -346,14 +346,36 @@
 
     if (state === 'downloaded') {
       // Extract filename from button value: "Download {filename}.pdf"
-      const raw      = button.value || '';
-      const filename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
+      const raw          = button.value || '';
+      const siteFilename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
+      const saveFilename = `${pid}_${siteFilename}`;
 
-      // Click the button to trigger the actual download
-      button.click();
+      // Submit the form via fetch so we can control the saved filename
+      const form     = button.closest('form');
+      const action   = form ? (form.action || location.href) : location.href;
+      const formData = form ? new FormData(form) : new FormData();
+      formData.set('downloadLincPDF', button.value);
 
-      markResult(pid, 'downloaded', filename);
-      setTimeout(processNext, randDelay());
+      panelLog(`${pid} → downloading…`);
+
+      fetch(action, { method: 'POST', body: formData, credentials: 'include' })
+        .then(r => r.ok ? r.blob() : Promise.reject(`HTTP ${r.status}`))
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a   = document.createElement('a');
+          a.href     = url;
+          a.download = saveFilename;
+          a.click();
+          URL.revokeObjectURL(url);
+          markResult(pid, 'downloaded', saveFilename);
+          setTimeout(processNext, randDelay());
+        })
+        .catch(err => {
+          log(`PID ${pid}: fetch failed (${err}), falling back to button click`);
+          button.click();
+          markResult(pid, 'downloaded', siteFilename);
+          setTimeout(processNext, randDelay());
+        });
 
     } else if (state === 'purchase') {
       log(`PID ${pid}: clicking purchase button`);
