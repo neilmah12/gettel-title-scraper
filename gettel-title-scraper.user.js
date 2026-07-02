@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.0
+// @version      1.4.0
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -383,13 +383,40 @@
       const raw      = button.value || '';
       const filename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
 
-      // Use a natural form submit — fetch() would send different Sec-Fetch-* headers
-      // and look like automation. The CSV records the PID→filename mapping instead.
       panelLog(`${pid} → downloading…`);
-      button.click();
 
-      markResult(pid, 'downloaded', filename);
-      setTimeout(processNext, randDelay());
+      // Submit the form ourselves and hand the blob to GM_download instead of
+      // letting the browser navigate/render it — this avoids the OS/AV auto-open
+      // behavior that was hijacking normal downloads into Adobe.
+      const form     = button.closest('form');
+      const action   = form ? (form.action || location.href) : location.href;
+      const formData = form ? new FormData(form) : new FormData();
+      formData.set(button.name, button.value);
+
+      fetch(action, { method: 'POST', body: formData, credentials: 'include' })
+        .then(r => r.ok ? r.blob() : Promise.reject(`HTTP ${r.status}`))
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          GM_download({
+            url,
+            name: filename,
+            saveAs: false,
+            onload: () => URL.revokeObjectURL(url),
+            onerror: (err) => {
+              log(`PID ${pid}: GM_download failed (${JSON.stringify(err)}), falling back to click`);
+              button.click();
+              URL.revokeObjectURL(url);
+            },
+          });
+          markResult(pid, 'downloaded', filename);
+          setTimeout(processNext, randDelay());
+        })
+        .catch(err => {
+          log(`PID ${pid}: fetch failed (${err}), falling back to button click`);
+          button.click();
+          markResult(pid, 'downloaded', filename);
+          setTimeout(processNext, randDelay());
+        });
 
     } else if (state === 'purchase') {
       log(`PID ${pid}: clicking purchase button`);
