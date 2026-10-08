@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper 2
 // @namespace    https://github.com/neilmah12/gettel-title-scraper/v2
-// @version      1.3.10
+// @version      1.3.11
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -143,7 +143,7 @@
     const sid = getSessionId();
     if (!sid) { log('ERROR: no session ID in URL'); return; }
     log('Navigating to detail page for PID ' + pid);
-    location.href = 'https://database.gettelnetwork.com/WebCore_MainDetails?sessionid=' + sid + '&pid=' + pid;
+    location.href = location.origin + '/WebCore_MainDetails?sessionid=' + sid + '&pid=' + pid;
   }
 
   // -- Page state detection -----------------------------------------------------
