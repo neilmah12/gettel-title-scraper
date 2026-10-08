@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.3
+// @version      1.3.4
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -84,15 +84,15 @@
   // Pulls sessionid from the current URL if present, falls back to whatever
   // was last captured (some pages, e.g. the cart confirmation, don't carry it).
   function getSessionId() {
-    const urlMatch = (location.search + location.pathname).match(/sessionid=([^&\s]+)/);
+    const urlMatch = (location.search + location.pathname).match(/sessionid=([^&\s]+)/i);
     if (urlMatch) {
       GM_setValue(KEY_SESSION, urlMatch[1]);
       return urlMatch[1];
     }
     // Also check any link on the page that happens to carry a sessionid
-    const linkWithSession = [...document.querySelectorAll('a[href*="sessionid="]')][0];
+    const linkWithSession = [...document.querySelectorAll('a[href*="sessionid=" i]')][0];
     if (linkWithSession) {
-      const m = linkWithSession.getAttribute('href').match(/sessionid=([^&\s]+)/);
+      const m = linkWithSession.getAttribute('href').match(/sessionid=([^&\s]+)/i);
       if (m) {
         GM_setValue(KEY_SESSION, m[1]);
         return m[1];
@@ -170,6 +170,15 @@
 
     const buyBtn = document.querySelector('input[name="doPurchase"]');
     if (buyBtn) return { state: 'purchase', button: buyBtn };
+
+    // Fallback: site may have renamed the purchase input. On an unpurchased page the
+    // only button is "Download Full Sheet PDF"; the purchased page says so in its text.
+    const purchased = /purchased property report/i.test(document.body.innerText);
+    if (!purchased) {
+      const fullSheet = [...document.querySelectorAll('input[type="submit"], input[type="button"], button')]
+        .find(el => /download full sheet pdf/i.test(el.value || el.textContent || ''));
+      if (fullSheet) return { state: 'purchase', button: fullSheet };
+    }
 
     return { state: 'no_title', button: null };
   }
