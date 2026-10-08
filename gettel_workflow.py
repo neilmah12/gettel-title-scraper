@@ -187,9 +187,10 @@ def organize(cfg, log=print):
 # %%
 ENC_HEADER_RE = re.compile(r"ENCUMBRANCES,?\s*LIENS\s*&\s*INTERESTS", re.I)
 
+# Old-style numbers carry letters ("3173NI 27/06/1963 CAVEAT"). Examples:
 # "182 058 105  09/03/2018  MORTGAGE"  or  "232 315 801  18/10/2023  DISCHARGE OF MORTGAGE 222035284"
 HEADER_RE = re.compile(
-    r"^(?P<regnum>\d{3}\s?\d{3}\s?\d{3})\s+(?P<date>\d{2}/\d{2}/\d{4})\s+"
+    r"^(?P<regnum>\d{3}\s?\d{3}\s?\d{3}|\d{1,7}\s?[A-Z]{1,3})\s+(?P<date>\d{2}/\d{2}/\d{4})\s+"
     r"(?P<etype>[A-Z][A-Z /&,'\-]*?)(?:\s+(?P<ref>\d[\d ]*\d))?\s*$"
 )
 # Lines repeated on every page or trailing the section; they must not leak into an entry
@@ -200,7 +201,7 @@ NOISE_RES = [re.compile(p) for p in (
 END_RES = [re.compile(p) for p in (r"^TOTAL INSTRUMENTS", r"^THE REGISTRAR OF TITLES CERTIFIES")]
 
 LENDER_RE = re.compile(r"^MORTGAGEE\s*-\s*(.+)", re.I)
-LENDER_STOP_RE = re.compile(r"^(\d|P\.?\s?O\.?\s+BOX|ORIGINAL|AGENT|ATTORNEY|MORTGAGEE|CAVEATOR|RE\s*:)", re.I)
+LENDER_STOP_RE = re.compile(r"^(\d|C/O|P\.?\s?O\.?\s+BOX|ORIGINAL|AGENT|ATTORNEY|MORTGAGEE|CAVEATOR|RE\s*:)", re.I)
 AMOUNT_RE = re.compile(r"ORIGINAL\s+PRINCIPAL\s+AMOUNT\s*:?\s*\$?\s*([\d,]+(?:\.\d+)?)", re.I)
 REGNUM_RE = re.compile(r"\b(\d{3}\s?\d{3}\s?\d{3})\b")
 DISCHARGE_REF_RE = re.compile(r"DISCHARGE\s+OF\s+MORTGAGE\s+(\d{3}\s?\d{3}\s?\d{3})", re.I)
@@ -261,16 +262,24 @@ def split_entries(section_text):
 
 
 def parse_lenders(lines):
-    """MORTGAGEE - NAME. (a name that wraps onto the next line is joined until it ends with '.')"""
+    """
+    MORTGAGEE - NAME[.]  A name is complete when it ends with '.', but individuals often have
+    no period, so a following line is only joined when it is clearly the rest of a wrapped
+    name: within 2 lines, ends with '.', has no digits, and is not C/O, AGENT, an address, etc.
+    """
     lenders, i = [], 0
     while i < len(lines):
         m = LENDER_RE.match(lines[i])
         if m:
             name, j = m.group(1).strip(), i
-            while (not name.endswith(".") and j + 1 < len(lines) and j - i < 2
-                   and not LENDER_STOP_RE.match(lines[j + 1])):
-                j += 1
-                name += " " + lines[j].strip()
+            if not name.endswith("."):
+                for k in (1, 2):
+                    seg = lines[i + 1:i + 1 + k]
+                    if len(seg) < k or any(LENDER_STOP_RE.match(x) or re.search(r"\d", x) for x in seg):
+                        break
+                    if seg[-1].endswith("."):
+                        name, j = name + " " + " ".join(seg), i + k
+                        break
             lenders.append(name.rstrip(". ").strip())
             i = j
         i += 1

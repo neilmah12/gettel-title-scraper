@@ -92,6 +92,20 @@ class ParserTests(unittest.TestCase):
         _, mortgages, _ = parse(text)
         self.assertEqual(mortgages[0]["lender"], "COMPUTERSHARE TRUST COMPANY OF CANADA")
 
+    def test_individual_lender_without_period_stops_at_care_of(self):
+        text = ("ENCUMBRANCES, LIENS & INTERESTS\n162 281 424 07/10/2016 MORTGAGE\n"
+                "MORTGAGEE - PAUL DARYL WILSON\nC/O 2900 MANULIFE PLACE\n10180-101 ST\nEDMONTON\n"
+                "ORIGINAL PRINCIPAL AMOUNT: $250,000\n")
+        _, mortgages, _ = parse(text)
+        self.assertEqual(mortgages[0]["lender"], "PAUL DARYL WILSON")
+
+    def test_two_mortgagees(self):
+        text = ("ENCUMBRANCES, LIENS & INTERESTS\n232 325 894 25/10/2023 MORTGAGE\n"
+                "MORTGAGEE - CANADA ICI CAPITAL CORPORATION.\n106-205 CARNEGIE DRIVE\n"
+                "MORTGAGEE - GENERAL BANK OF CANADA.\n100, 11523 100 AVE\nORIGINAL PRINCIPAL AMOUNT: $6,345,000\n")
+        _, mortgages, _ = parse(text)
+        self.assertEqual(mortgages[0]["lender"], "CANADA ICI CAPITAL CORPORATION; GENERAL BANK OF CANADA")
+
     def test_discharge_of_listed_mortgage(self):
         text = ("ENCUMBRANCES, LIENS & INTERESTS\n"
                 "182 058 105 09/03/2018 MORTGAGE\nMORTGAGEE - ABC BANK.\nORIGINAL PRINCIPAL AMOUNT: $1,000,000\n"
@@ -106,6 +120,12 @@ class ParserTests(unittest.TestCase):
         _, mortgages, discharges = parse(text)
         self.assertEqual(mortgages[0]["discharged"], "Unknown")
         self.assertTrue(discharges[0]["unmatched"])
+
+    def test_old_style_registration_number(self):
+        text = ("ENCUMBRANCES, LIENS & INTERESTS\n3173NI 27/06/1963 CAVEAT\nCAVEATOR - THE CITY OF EDMONTON.\n"
+                "982 281 412 16/09/1998 CAVEAT\nTOTAL INSTRUMENTS: 002\n")
+        entries, _, _ = parse(text)
+        self.assertEqual([e["regnum"] for e in entries], ["3173NI", "982 281 412"])
 
     def test_certified_date(self):
         self.assertEqual(gw.parse_certified("CERTIFIES THIS TO BE\nTITLE REPRESENTED HEREIN THIS 25 DAY OF\nJANUARY, 2024 AT 08:40 P.M."),
