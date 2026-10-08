@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.2
+// @version      1.3.3
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -150,10 +150,10 @@
     return location.pathname.includes('WebCore_MainDetails');
   }
 
-  // Login page: a password field is present, or the path looks like a login route.
+  // Login page: only a visible password field counts. The path can't be used,
+  // because /webcore_login also serves normal logged-in pages.
   function isLoginPage() {
-    return !!document.querySelector('input[type="password"]') ||
-           /login|logon|signin/i.test(location.pathname);
+    return !!document.querySelector('input[type="password"]');
   }
 
   function isCartPage() {
