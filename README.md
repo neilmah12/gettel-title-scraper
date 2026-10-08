@@ -32,7 +32,7 @@ Among mortgages that are not discharged and still inside their term (registered 
 |---|---|---|
 | In term | Yes | on the refi map; `Est. Refi Date`, `Months to Refi`, CMB rate and risk filled in |
 | Past term, likely renewed | No | should already have refinanced or renewed; `Renewal Est. Date` rolls the maturity forward one term at a time (renewals are not registered on title) |
-| None | No | no mortgage on title, or all discharged |
+| No active mortgage | No | no mortgage on title, or all discharged |
 | Pending | Pending | no title parsed yet |
 
 `Refi Flag` notes: several mortgages in term (largest used, newest named), mortgage pre-dates sale (possible assumption), partial discharge, mortgage exceeds sale price (blanket/portfolio?), title older than 12 months, title certified before the sale. Months missing from the CMB table show `No CMB data` and are listed on the `Exceptions` sheet.

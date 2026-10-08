@@ -510,7 +510,7 @@ def refi_for_pid(mortgages, sale_date, as_of, term_years=5, term_by_lender=None,
     the next maturity rolled forward by one term at a time, since renewals are not
     registered on title. A pre-sale mortgage still in term is kept (likely assumed).
     """
-    out = {"include": "No", "signal": "None", "flag": "", "mortgage": None, "refi_date": None, "months": None,
+    out = {"include": "No", "signal": "No active mortgage", "flag": "", "mortgage": None, "refi_date": None, "months": None,
            "renewal_date": None, "renewal_months": None, "term": None}
     if not mortgages:
         out["flag"] = "No mortgage on title"
