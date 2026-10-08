@@ -26,12 +26,18 @@ In Colab, paste each `# %%` block of `gettel_workflow.py` into its own cell, edi
 
 ## Refi rule
 
-Uses the newest mortgage that is not discharged and is still inside its 5 year term (registered date + 5 years is after today).
+Among mortgages that are not discharged and still inside their term (registered date + term is after today), the **largest** one drives the refi date (ties go to the newest). The term defaults to 5 years and is an assumption: change `term_years`, or set `term_by_lender` (e.g. `{"CANADA ICI": 10}`). `Term Assumed (yrs)` is written to the output.
 
-- Past term: `Refi Include = No`, flagged, off the map. Should already have refinanced.
-- A mortgage registered before the sale that is still in term is kept and noted as a possible assumption.
-- `Refi Include = Pending` means no title has been parsed for that property yet.
-- `Est. Refi Date` is looked up in the CMB table (`Maturity Month`, `Estimated 5-Yr CMB Rate`, `Risk Tier for Refi`). Months missing from the table show `No CMB data` and are listed on the `Exceptions` sheet.
+| Refi Signal | Refi Include | Meaning |
+|---|---|---|
+| In term | Yes | on the refi map; `Est. Refi Date`, `Months to Refi`, CMB rate and risk filled in |
+| Past term, likely renewed | No | should already have refinanced or renewed; `Renewal Est. Date` rolls the maturity forward one term at a time (renewals are not registered on title) |
+| None | No | no mortgage on title, or all discharged |
+| Pending | Pending | no title parsed yet |
+
+`Refi Flag` notes: several mortgages in term (largest used, newest named), mortgage pre-dates sale (possible assumption), partial discharge, mortgage exceeds sale price (blanket/portfolio?), title older than 12 months, title certified before the sale. Months missing from the CMB table show `No CMB data` and are listed on the `Exceptions` sheet.
+
+Note that Alberta titles drop discharged mortgages, so `Mortgage#_Discharged = No` mostly means "still listed", not "confirmed active".
 
 ## Output workbook
 

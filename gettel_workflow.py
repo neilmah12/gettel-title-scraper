@@ -49,7 +49,8 @@ CONFIG = {
     "cmb_table": None,                              # xlsx/csv with Maturity Month, Estimated 5-Yr CMB Rate,
                                                     # Risk Tier for Refi. None = Sheet2 of the database
     "prop_id_col": "Prop ID",
-    "term_years": 5,                                # mortgage term used for the refi window
+    "term_years": 5,                                # assumed mortgage term (an assumption, not on title)
+    "term_by_lender": {},                           # per-lender override, e.g. {"CANADA ICI": 10}
     "as_of": None,                                  # "YYYY-MM-DD" or None = today
     "reparse": False,                               # True = re-read every title, not just new ones
     "only_parsed": False,                           # True = output only rows that have a title
@@ -481,16 +482,36 @@ def add_years(d, years):
         return d.replace(year=d.year + years, day=28)
 
 
-def refi_for_pid(mortgages, sale_date, as_of, term_years=5):
+def _amt(m):
+    v = m.get("amount")
+    return 0.0 if v is None or (isinstance(v, float) and math.isnan(v)) else float(v)
+
+
+def term_for(m, default, by_lender=None):
+    lender = str(m.get("lender") or "").upper()
+    for key, yrs in (by_lender or {}).items():
+        if key.upper() in lender:
+            return yrs
+    return default
+
+
+def _months_until(d, as_of):
+    return max(1, math.ceil((d - as_of).days / 30.4375))
+
+
+def refi_for_pid(mortgages, sale_date, as_of, term_years=5, term_by_lender=None, sale_price=None):
     """
-    mortgages: list of dicts (date, discharged, regnum, lender ...) for one PID.
-    Rule: use the newest mortgage that is not discharged and is still inside its
-    term (registered date + term_years is after as_of). A mortgage already past
-    its term should have refinanced, so it is flagged and kept off the refi map.
-    A mortgage registered before the sale that is still inside its term is kept
-    (likely assumed) and noted.
+    mortgages: list of dicts (date, discharged, amount, lender ...) for one PID.
+
+    Rule: among mortgages that are not discharged and still inside their term
+    (registered date + term is after as_of), the LARGEST one drives the refi date
+    (ties go to the newest). Past-term mortgages are kept off the map
+    (Refi Include = No) but get a Refi Signal of "Past term, likely renewed" with
+    the next maturity rolled forward by one term at a time, since renewals are not
+    registered on title. A pre-sale mortgage still in term is kept (likely assumed).
     """
-    out = {"include": "No", "flag": "", "mortgage": None, "refi_date": None, "months": None}
+    out = {"include": "No", "signal": "None", "flag": "", "mortgage": None, "refi_date": None, "months": None,
+           "renewal_date": None, "renewal_months": None, "term": None}
     if not mortgages:
         out["flag"] = "No mortgage on title"
         return out
@@ -500,27 +521,40 @@ def refi_for_pid(mortgages, sale_date, as_of, term_years=5):
             else "Mortgage date not readable"
         return out
 
-    in_term = [m for m in active if add_years(m["date"], term_years) > as_of]
-    if not in_term:
-        newest = max(active, key=lambda m: m["date"])
-        due = add_years(newest["date"], term_years)
-        out["flag"] = (f"Newest active mortgage ({newest['date']:%d/%m/%Y}) is past its {term_years}-yr term "
-                       f"(was due {due:%b %Y}); should have refinanced")
-        return out
-
-    pick = max(in_term, key=lambda m: m["date"])
-    refi = add_years(pick["date"], term_years)
-    out.update(include="Yes", mortgage=pick, refi_date=refi,
-               months=max(1, math.ceil((refi - as_of).days / 30.4375)))
+    rows = []
+    for m in active:
+        t = term_for(m, term_years, term_by_lender)
+        rows.append((m, t, add_years(m["date"], t)))
+    in_term = [r for r in rows if r[2] > as_of]
     notes = []
-    if sale_date and pick["date"] < sale_date:
-        notes.append("Mortgage pre-dates sale (possible assumption)")
-    if pick["discharged"] == "Partial":
-        notes.append("Partial discharge registered; mortgage still on title")
-    if pick["discharged"] == "Unknown":
-        notes.append("A discharge could not be matched; confirm mortgage is still active")
-    if len(in_term) > 1:
-        notes.append(f"{len(in_term)} active mortgages in term; using newest")
+
+    if in_term:
+        pick, t, refi = max(in_term, key=lambda r: (_amt(r[0]), r[0]["date"]))
+        out.update(include="Yes", signal="In term", mortgage=pick, refi_date=refi, term=t,
+                   months=_months_until(refi, as_of))
+        if len(in_term) > 1:
+            notes.append(f"{len(in_term)} active mortgages in term; using largest ({pick.get('lender')}, ${_amt(pick):,.0f})")
+            newest = max(in_term, key=lambda r: r[0]["date"])[0]
+            if newest is not pick:
+                notes.append(f"newest in-term is {newest.get('lender')} {newest['date']:%d/%m/%Y} (${_amt(newest):,.0f})")
+        if sale_date and pick["date"] < sale_date:
+            notes.append("Mortgage pre-dates sale (possible assumption)")
+        if pick["discharged"] == "Partial":
+            notes.append("Partial discharge registered; mortgage still on title")
+        if pick["discharged"] == "Unknown":
+            notes.append("A discharge could not be matched; confirm mortgage is still active")
+    else:
+        pick, t, due = max(rows, key=lambda r: (_amt(r[0]), r[0]["date"]))
+        nxt = due
+        while nxt <= as_of:
+            nxt = add_years(nxt, t)
+        out.update(signal="Past term, likely renewed", mortgage=pick, term=t,
+                   renewal_date=nxt, renewal_months=_months_until(nxt, as_of))
+        notes.append(f"Largest active mortgage ({pick['date']:%d/%m/%Y}) is past its {t}-yr term "
+                     f"(was due {due:%b %Y}); likely renewed, next maturity est. {nxt:%b %Y}")
+
+    if sale_price and _amt(pick) > float(sale_price):
+        notes.append("Mortgage exceeds sale price (blanket/portfolio?)")
     out["flag"] = "; ".join(notes)
     return out
 
@@ -559,6 +593,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
     pid_col = cfg["prop_id_col"]
     as_of = datetime.strptime(cfg["as_of"], "%Y-%m-%d").date() if cfg.get("as_of") else date.today()
     term = int(cfg.get("term_years", 5))
+    by_lender = cfg.get("term_by_lender") or {}
     cmb = load_cmb_table(cfg, log)
 
     db = pd.read_excel(resolve(base, cfg["database"]), sheet_name=0)
@@ -598,7 +633,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         pid, sdate = rec[pid_col], (rec["Sale Date"].date() if pd.notna(rec["Sale Date"]) else None)
         out = {}
         if pid not in chosen.index:
-            out.update({"Refi Include": "Pending", "Refi Flag": "No title parsed yet"})
+            out.update({"Refi Include": "Pending", "Refi Signal": "Pending", "Refi Flag": "No title parsed yet"})
             rows.append(out)
             continue
         info = chosen.loc[pid]
@@ -607,11 +642,21 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         mlist = [{**r._asdict(), "date": pd.to_datetime(r.date).date() if pd.notna(r.date) else None}
                  for r in g.itertuples(index=False)]
         mlist.sort(key=lambda m: m["date"] or date.min)
-        res = refi_for_pid(mlist, sdate, as_of, term)
+        price = rec.get("Sale Price")
+        res = refi_for_pid(mlist, sdate, as_of, term, by_lender, price if pd.notna(price) else None)
         flags = [res["flag"]] if res["flag"] else []
-        if cert and sdate and cert < sdate:
-            flags.append("Title certified before the sale date; order a newer title")
-        out.update({"Refi Include": res["include"], "Refi Flag": "; ".join(flags)})
+        age = None
+        if cert:
+            age = (as_of.year - cert.year) * 12 + as_of.month - cert.month
+            if age > 12:
+                flags.append(f"Title is {age} months old; later refinancings not visible")
+            if sdate and cert < sdate:
+                flags.append("Title certified before the sale date; order a newer title")
+        out.update({"Refi Include": res["include"], "Refi Signal": res["signal"], "Refi Flag": "; ".join(flags),
+                    "Term Assumed (yrs)": res["term"], "Title Age (months)": age})
+        if res["renewal_date"]:
+            out.update({"Renewal Est. Date": res["renewal_date"].strftime("%b %Y"),
+                        "Renewal Est. Months": res["renewal_months"]})
         if res["refi_date"]:
             key = res["refi_date"].strftime("%b %Y")
             rate, tier = cmb.get(key, (None, None))
@@ -629,8 +674,9 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         rows.append(out)
 
     new_cols = pd.DataFrame(rows, index=db.index)
-    order = ["Refi Include", "Refi Flag", "Refi Window", "Months to Refi", "Est. Refi Date", "5 Yr CMB", "Risk",
-             "Title File", "Title Certified"] + [c for c in new_cols.columns if c.startswith("Mortgage")]
+    order = ["Refi Include", "Refi Signal", "Refi Flag", "Refi Window", "Months to Refi", "Est. Refi Date",
+             "5 Yr CMB", "Risk", "Term Assumed (yrs)", "Renewal Est. Date", "Renewal Est. Months",
+             "Title File", "Title Certified", "Title Age (months)"] + [c for c in new_cols.columns if c.startswith("Mortgage")]
     new_cols = new_cols.reindex(columns=order)
     result = pd.concat([db.drop(columns=[c for c in new_cols.columns if c in db.columns]), new_cols], axis=1)
     if cfg.get("only_parsed"):

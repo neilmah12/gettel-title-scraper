@@ -161,6 +161,30 @@ class RefiTests(unittest.TestCase):
         self.assertEqual(r["include"], "Yes")
         self.assertIn("pre-dates sale", r["flag"])
 
+    def test_past_term_gets_renewal_estimate(self):
+        r = gw.refi_for_pid([self.mtg(date(2018, 1, 11))], date(2017, 12, 1), self.AS_OF)
+        self.assertEqual((r["include"], r["signal"]), ("No", "Past term, likely renewed"))
+        self.assertEqual(r["renewal_date"], date(2028, 1, 11))
+        self.assertIn("next maturity est. Jan 2028", r["flag"])
+
+    def test_largest_in_term_drives_and_newest_is_noted(self):
+        big = {"date": date(2024, 1, 1), "discharged": "No", "amount": 5_000_000.0, "lender": "BIG BANK"}
+        small = {"date": date(2025, 6, 1), "discharged": "No", "amount": 500_000.0, "lender": "SMALL LENDER"}
+        r = gw.refi_for_pid([small, big], date(2023, 1, 1), self.AS_OF)
+        self.assertEqual(r["mortgage"]["lender"], "BIG BANK")
+        self.assertEqual(r["refi_date"], date(2029, 1, 1))
+        self.assertIn("newest in-term is SMALL LENDER", r["flag"])
+
+    def test_lender_term_override(self):
+        m = {"date": date(2023, 1, 1), "discharged": "No", "lender": "CANADA ICI CAPITAL CORPORATION"}
+        r = gw.refi_for_pid([m], None, self.AS_OF, 5, {"canada ici": 10})
+        self.assertEqual((r["term"], r["refi_date"]), (10, date(2033, 1, 1)))
+
+    def test_mortgage_exceeding_sale_price_flagged(self):
+        m = {"date": date(2024, 1, 1), "discharged": "No", "amount": 50_000_000.0}
+        r = gw.refi_for_pid([m], None, self.AS_OF, sale_price=40_000_000)
+        self.assertIn("exceeds sale price", r["flag"])
+
     def test_discharged_and_missing(self):
         self.assertEqual(gw.refi_for_pid([self.mtg(date(2024, 1, 1), "Yes")], None, self.AS_OF)["flag"], "All mortgages discharged")
         self.assertEqual(gw.refi_for_pid([], None, self.AS_OF)["flag"], "No mortgage on title")
