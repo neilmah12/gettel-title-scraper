@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.5
+// @version      1.3.6
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -14,14 +14,14 @@
 (function () {
   'use strict';
 
-  // ── Constants ────────────────────────────────────────────────────────────────
+  // -- Constants ----------------------------------------------------------------
 
   const KEY_RESULTS   = 'gts_results';    // { [pid]: { pid, status, filename, timestamp } }
-  const KEY_QUEUE     = 'gts_queue';      // string[] – PIDs still to process
+  const KEY_QUEUE     = 'gts_queue';      // string[] - PIDs still to process
   const KEY_RUNNING   = 'gts_running';    // bool
-  const KEY_CURRENT   = 'gts_current';    // string – PID actively being processed
-  const KEY_SESSION   = 'gts_session';    // string – sessionid captured at batch start
-  const KEY_STUCK_AT  = 'gts_stuck_at';   // number – timestamp of last page-load while running
+  const KEY_CURRENT   = 'gts_current';    // string - PID actively being processed
+  const KEY_SESSION   = 'gts_session';    // string - sessionid captured at batch start
+  const KEY_STUCK_AT  = 'gts_stuck_at';   // number - timestamp of last page-load while running
 
   const DELAY_MIN_MS  = 3000;
   const DELAY_MAX_MS  = 7000;
@@ -29,7 +29,7 @@
   const LONG_PAUSE_MIN_MS = 12000;
   const LONG_PAUSE_MAX_MS = 25000;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  // -- Helpers ------------------------------------------------------------------
 
   function randDelay() {
     if (Math.random() < LONG_PAUSE_CHANCE) {
@@ -116,7 +116,7 @@
     console.log(`[GTS] ${msg}`);
   }
 
-  // ── CSV export ───────────────────────────────────────────────────────────────
+  // -- CSV export ---------------------------------------------------------------
 
   function exportCsv() {
     const results = getResults();
@@ -135,7 +135,7 @@
     URL.revokeObjectURL(url);
   }
 
-  // ── Navigation ───────────────────────────────────────────────────────────────
+  // -- Navigation ---------------------------------------------------------------
 
   function navigateToDetail(pid) {
     const sid = getSessionId();
@@ -144,7 +144,7 @@
     location.href = `https://database.gettelnetwork.com/WebCore_MainDetails?sessionid=${sid}&pid=${pid}`;
   }
 
-  // ── Page state detection ─────────────────────────────────────────────────────
+  // -- Page state detection -----------------------------------------------------
 
   function isDetailPage() {
     return location.pathname.includes('WebCore_MainDetails');
@@ -161,9 +161,9 @@
   }
 
   // Detect which state the detail page is in:
-  //   'downloaded' – downloadLincPDF button present (title available)
-  //   'purchase'   – doPurchase button present (need to buy)
-  //   'no_title'   – neither button present
+  //   'downloaded' - downloadLincPDF button present (title available)
+  //   'purchase'   - doPurchase button present (need to buy)
+  //   'no_title'   - neither button present
   function detectDetailState() {
     const dlBtn  = document.querySelector('input[name="downloadLincPDF"]');
     if (dlBtn) return { state: 'downloaded', button: dlBtn };
@@ -183,7 +183,7 @@
     return { state: 'no_title', button: null };
   }
 
-  // ── Panel UI ─────────────────────────────────────────────────────────────────
+  // -- Panel UI -----------------------------------------------------------------
 
   let panel = null;
 
@@ -289,7 +289,7 @@
     if (resumeBtn) resumeBtn.style.display = hasPending && !running ? 'inline-block' : 'none';
   }
 
-  // ── Button handlers ──────────────────────────────────────────────────────────
+  // -- Button handlers ----------------------------------------------------------
 
   function onStartBatch() {
     const rawInput = document.getElementById('gts-pid-input')?.value || '';
@@ -351,7 +351,7 @@
     refreshPanel();
   }
 
-  // ── Processing logic ─────────────────────────────────────────────────────────
+  // -- Processing logic ---------------------------------------------------------
 
   function processNext() {
     if (!isRunning()) { log('Paused, not continuing'); return; }
@@ -381,11 +381,11 @@
     results[pid] = { pid, status, filename, timestamp: nowIso() };
     saveResults(results);
     log(`PID ${pid}: ${status}${filename ? ` (${filename})` : ''}`);
-    panelLog(`${pid} → ${status}${filename ? ` [${filename}]` : ''}`);
+    panelLog(`${pid} -> ${status}${filename ? ` [${filename}]` : ''}`);
     refreshPanel();
   }
 
-  // ── Page handlers ────────────────────────────────────────────────────────────
+  // -- Page handlers ------------------------------------------------------------
 
   function handleDetailPage() {
     if (!isRunning()) return;
@@ -407,9 +407,9 @@
       const raw      = button.value || '';
       const filename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
 
-      // Use a natural form submit — fetch() would send different Sec-Fetch-* headers
-      // and look like automation. The CSV records the PID→filename mapping instead.
-      panelLog(`${pid} → downloading…`);
+      // Use a natural form submit - fetch() would send different Sec-Fetch-* headers
+      // and look like automation. The CSV records the PID->filename mapping instead.
+      panelLog(`${pid} -> downloading...`);
       button.click();
 
       markResult(pid, 'downloaded', filename);
@@ -417,18 +417,18 @@
 
     } else if (state === 'purchase') {
       log(`PID ${pid}: clicking purchase button: ${button.outerHTML}`);
-      panelLog(`${pid} → purchasing…`);
+      panelLog(`${pid} -> purchasing...`);
       button.click();
       // Navigation to cart happens automatically via form submit.
       // Watchdog: if we're still on this page after 20s, the submit didn't go through.
       setTimeout(() => {
         if (!isRunning() || getCurrentPid() !== pid || !isDetailPage()) return;
         if (bumpRetryAndCheckExceeded()) {
-          panelLog(`${pid} → error (purchase click did nothing)`);
+          panelLog(`${pid} -> error (purchase click did nothing)`);
           markResult(pid, 'error');
           processNext();
         } else {
-          panelLog(`${pid} → still on page after click, retrying`);
+          panelLog(`${pid} -> still on page after click, retrying`);
           const form = button.closest('form');
           if (form && form.requestSubmit) {
             try { form.requestSubmit(button); return; } catch (_) {}
@@ -465,17 +465,17 @@
 
     if (link) {
       log(`PID ${pid}: on cart page, clicking back-link`);
-      panelLog(`${pid} → cart → returning to detail`);
+      panelLog(`${pid} -> cart -> returning to detail`);
       setTimeout(() => link.click(), randDelay());
     } else if (bumpRetryAndCheckExceeded()) {
       log(`PID ${pid}: stuck on cart page after repeated retries, marking error`);
-      panelLog(`${pid} → error (stuck on cart page)`);
+      panelLog(`${pid} -> error (stuck on cart page)`);
       markResult(pid, 'error');
       setTimeout(processNext, randDelay());
     } else {
       // Fallback: navigate directly
       log(`PID ${pid}: back-link not found on cart page, navigating directly`);
-      panelLog(`${pid} → cart back-link missing, navigating directly`);
+      panelLog(`${pid} -> cart back-link missing, navigating directly`);
       setTimeout(() => navigateToDetail(pid), randDelay());
     }
   }
@@ -487,12 +487,12 @@
     if (!pid) return;
 
     log(`PID ${pid}: unexpected page at ${location.pathname}, marking error`);
-    panelLog(`${pid} → error (unexpected page)`);
+    panelLog(`${pid} -> error (unexpected page)`);
     markResult(pid, 'error');
     setTimeout(processNext, randDelay());
   }
 
-  // ── Entry point ──────────────────────────────────────────────────────────────
+  // -- Entry point --------------------------------------------------------------
 
   function main() {
     buildPanel();
@@ -524,12 +524,12 @@
     } else if (isCartPage()) {
       handleCartPage();
     } else {
-      // We're on some other page (e.g. dashboard) while a run is active —
+      // We're on some other page (e.g. dashboard) while a run is active -
       // resume by navigating to the current PID if one is set, else processNext.
       const pid = getCurrentPid();
       if (pid && bumpRetryAndCheckExceeded()) {
         log(`PID ${pid}: stuck off-flow after repeated retries, marking error`);
-        panelLog(`${pid} → error (stuck, repeated bad navigation)`);
+        panelLog(`${pid} -> error (stuck, repeated bad navigation)`);
         markResult(pid, 'error');
         setTimeout(processNext, randDelay());
       } else if (pid) {
