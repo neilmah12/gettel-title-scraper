@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Gettel Title Scraper
-// @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.6
+// @name         Gettel Title Scraper 2
+// @namespace    https://github.com/neilmah12/gettel-title-scraper/v2
+// @version      1.3.7
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
