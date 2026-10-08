@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.1
+// @version      1.3.2
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -150,6 +150,12 @@
     return location.pathname.includes('WebCore_MainDetails');
   }
 
+  // Login page: a password field is present, or the path looks like a login route.
+  function isLoginPage() {
+    return !!document.querySelector('input[type="password"]') ||
+           /login|logon|signin/i.test(location.pathname);
+  }
+
   function isCartPage() {
     return location.pathname.includes('WebCore_ButtonHandler');
   }
@@ -294,6 +300,13 @@
     }
     saveResults(results);
 
+    // Drop any stale session ID so we only use one from the current page
+    GM_setValue(KEY_SESSION, null);
+    if (!getSessionId()) {
+      alert('No sessionid found on this page. Open a Gettel page that has sessionid in the URL (e.g. a search result), then start the batch.');
+      return;
+    }
+
     // Build queue from all pending/error entries
     const queue = Object.values(results)
       .filter(r => r.status === 'pending' || r.status === 'error')
@@ -313,6 +326,8 @@
     if (isRunning()) return;
     const queue = getQueue();
     if (!queue.length && !getCurrentPid()) { alert('No pending batch to resume.'); return; }
+    const sid = getSessionId();
+    if (!sid) { alert('No sessionid on this page. Navigate to a Gettel page with sessionid in the URL, then Resume.'); return; }
     setRunning(true);
     log('Resuming batch');
     panelLog('Resuming batch');
@@ -458,6 +473,22 @@
     buildPanel();
 
     if (!isRunning()) {
+      refreshPanel();
+      return;
+    }
+
+    // Session expired / bounced to login: stop instead of looping with a dead session
+    if (isLoginPage()) {
+      const pid = getCurrentPid();
+      if (pid) {
+        const q = getQueue();
+        if (!q.includes(pid)) { q.unshift(pid); saveQueue(q); }
+        GM_setValue(KEY_CURRENT, null);
+      }
+      GM_setValue(KEY_SESSION, null);
+      setRunning(false);
+      log('Login page detected, batch paused');
+      panelLog('Logged out. Log in, open a page with sessionid in the URL, then click Resume.');
       refreshPanel();
       return;
     }
