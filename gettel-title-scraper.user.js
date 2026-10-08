@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper 2
 // @namespace    https://github.com/neilmah12/gettel-title-scraper/v2
-// @version      1.3.8
+// @version      1.3.10
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -84,7 +84,7 @@
   // Pulls sessionid from the current URL if present, falls back to whatever
   // was last captured (some pages, e.g. the cart confirmation, don't carry it).
   function getSessionId() {
-    const urlMatch = (location.search + location.pathname).match(/sessionid=([^&\s]+)/i);
+    const urlMatch = (location.search + '&' + location.pathname).match(/sessionid=([^&\s/?#]+)/i);
     if (urlMatch) {
       GM_setValue(KEY_SESSION, urlMatch[1]);
       return urlMatch[1];
@@ -92,7 +92,7 @@
     // Also check any link on the page that happens to carry a sessionid
     const linkWithSession = [...document.querySelectorAll('a[href*="sessionid=" i]')][0];
     if (linkWithSession) {
-      const m = linkWithSession.getAttribute('href').match(/sessionid=([^&\s]+)/i);
+      const m = linkWithSession.getAttribute('href').match(/sessionid=([^&\s/?#]+)/i);
       if (m) {
         GM_setValue(KEY_SESSION, m[1]);
         return m[1];
@@ -113,7 +113,7 @@
   }
 
   function log(msg) {
-    console.log(`[GTS] ${msg}`);
+    console.log('[GTS] ' + msg);
   }
 
   // -- CSV export ---------------------------------------------------------------
@@ -132,7 +132,7 @@
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `gettel-titles-${Date.now()}.csv`;
+    a.download = 'gettel-titles-' + Date.now() + '.csv';
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -142,8 +142,8 @@
   function navigateToDetail(pid) {
     const sid = getSessionId();
     if (!sid) { log('ERROR: no session ID in URL'); return; }
-    log(`Navigating to detail page for PID ${pid}`);
-    location.href = `https://database.gettelnetwork.com/WebCore_MainDetails?sessionid=${sid}&pid=${pid}`;
+    log('Navigating to detail page for PID ' + pid);
+    location.href = 'https://database.gettelnetwork.com/WebCore_MainDetails?sessionid=' + sid + '&pid=' + pid;
   }
 
   // -- Page state detection -----------------------------------------------------
@@ -212,30 +212,26 @@
       overflowY:       'auto',
     });
 
-    panel.innerHTML = `
-      <div style="font-size:14px;font-weight:bold;margin-bottom:8px;color:#7eb8f7">
-        Gettel Title Scraper
-      </div>
-
-      <textarea id="gts-pid-input" rows="5" placeholder="Paste PIDs here (one per line or comma-separated)"
-        style="width:100%;box-sizing:border-box;background:#0d0d1a;color:#e0e0e0;border:1px solid #555;
-               border-radius:4px;padding:6px;font-family:monospace;font-size:11px;resize:vertical"></textarea>
-
-      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-        <button id="gts-btn-start"  style="${btnStyle('#2a6496')}">Start New Batch</button>
-        <button id="gts-btn-resume" style="${btnStyle('#28783a')}">Resume</button>
-        <button id="gts-btn-pause"  style="${btnStyle('#7a3030', 'display:none')}">Pause / Stop</button>
-        <button id="gts-btn-export" style="${btnStyle('#555')}">Export CSV</button>
-      </div>
-
-      <div id="gts-status" style="margin-top:10px;border-top:1px solid #333;padding-top:8px">
-        <div id="gts-current-pid" style="color:#aaa">Idle</div>
-        <div id="gts-counts" style="color:#888;margin-top:4px"></div>
-      </div>
-
-      <div id="gts-log" style="margin-top:8px;max-height:150px;overflow-y:auto;
-           border-top:1px solid #333;padding-top:6px;color:#777;font-size:10px"></div>
-    `;
+    panel.innerHTML = [
+      '<div style="font-size:14px;font-weight:bold;margin-bottom:8px;color:#7eb8f7">',
+      'Gettel Title Scraper',
+      '</div>',
+      '<textarea id="gts-pid-input" rows="5" placeholder="Paste PIDs here (one per line or comma-separated)"',
+      'style="width:100%;box-sizing:border-box;background:#0d0d1a;color:#e0e0e0;border:1px solid #555;',
+      'border-radius:4px;padding:6px;font-family:monospace;font-size:11px;resize:vertical"></textarea>',
+      '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">',
+      '<button id="gts-btn-start"  style="' + (btnStyle('#2a6496')) + '">Start New Batch</button>',
+      '<button id="gts-btn-resume" style="' + (btnStyle('#28783a')) + '">Resume</button>',
+      '<button id="gts-btn-pause"  style="' + (btnStyle('#7a3030', 'display:none')) + '">Pause / Stop</button>',
+      '<button id="gts-btn-export" style="' + (btnStyle('#555')) + '">Export CSV</button>',
+      '</div>',
+      '<div id="gts-status" style="margin-top:10px;border-top:1px solid #333;padding-top:8px">',
+      '<div id="gts-current-pid" style="color:#aaa">Idle</div>',
+      '<div id="gts-counts" style="color:#888;margin-top:4px"></div>',
+      '</div>',
+      '<div id="gts-log" style="margin-top:8px;max-height:150px;overflow-y:auto;',
+      'border-top:1px solid #333;padding-top:6px;color:#777;font-size:10px"></div>'
+    ].join(' ');
 
     document.body.appendChild(panel);
 
@@ -248,15 +244,15 @@
   }
 
   function btnStyle(bg, extra = '') {
-    return `background:${bg};color:#fff;border:none;border-radius:4px;padding:5px 10px;
-            cursor:pointer;font-size:11px;font-family:monospace;${extra}`;
+    return 'background:' + bg + ';color:#fff;border:none;border-radius:4px;padding:5px 10px;' +
+           'cursor:pointer;font-size:11px;font-family:monospace;' + extra;
   }
 
   function panelLog(msg) {
     const el = document.getElementById('gts-log');
     if (!el) return;
     const line = document.createElement('div');
-    line.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+    line.textContent = new Date().toLocaleTimeString() + ' ' + msg;
     el.prepend(line);
     // Keep at most 100 lines
     while (el.children.length > 100) el.removeChild(el.lastChild);
@@ -278,11 +274,11 @@
     const resumeBtn= document.getElementById('gts-btn-resume');
 
     if (curEl) {
-      curEl.textContent = running && curPid ? `Processing: ${curPid}` : 'Idle';
+      curEl.textContent = running && curPid ? 'Processing: ' + curPid : 'Idle';
       curEl.style.color = running ? '#7eb8f7' : '#aaa';
     }
     if (cntEl && total > 0) {
-      cntEl.textContent = `Done: ${done} | Remaining: ${remaining} | Total: ${total}`;
+      cntEl.textContent = 'Done: ' + done + ' | Remaining: ' + remaining + ' | Total: ' + total;
     }
     if (pauseBtn) pauseBtn.style.display = running ? 'inline-block' : 'none';
 
@@ -327,8 +323,8 @@
     setCurrentPid(null);
     setRunning(true);
 
-    log(`Starting batch: ${added} new PIDs added, ${queue.length} in queue`);
-    panelLog(`Batch started: ${queue.length} PIDs to process`);
+    log('Starting batch: ' + added + ' new PIDs added, ' + queue.length + ' in queue');
+    panelLog('Batch started: ' + queue.length + ' PIDs to process');
     refreshPanel();
     processNext();
   }
@@ -382,8 +378,8 @@
     const results = getResults();
     results[pid] = { pid, status, filename, timestamp: nowIso() };
     saveResults(results);
-    log(`PID ${pid}: ${status}${filename ? ` (${filename})` : ''}`);
-    panelLog(`${pid} -> ${status}${filename ? ` [${filename}]` : ''}`);
+    log('PID ' + pid + ': ' + status + (filename ? ' (' + filename + ')' : ''));
+    panelLog(pid + ' -> ' + status + (filename ? ' [' + filename + ']' : ''));
     refreshPanel();
   }
 
@@ -398,7 +394,7 @@
     // Verify URL PID matches what we expect
     const urlPid = new URLSearchParams(location.search).get('pid');
     if (urlPid && urlPid !== pid) {
-      log(`URL PID (${urlPid}) doesn't match current PID (${pid}), skipping`);
+      log('URL PID (' + urlPid + ') does not match current PID (' + pid + '), skipping');
       return;
     }
 
@@ -407,30 +403,30 @@
     if (state === 'downloaded') {
       // Extract filename from button value: "Download {filename}.pdf"
       const raw      = button.value || '';
-      const filename = raw.replace(/^Download\s+/i, '').trim() || `${pid}.pdf`;
+      const filename = raw.replace(/^Download\s+/i, '').trim() || (pid + '.pdf');
 
       // Use a natural form submit - fetch() would send different Sec-Fetch-* headers
       // and look like automation. The CSV records the PID->filename mapping instead.
-      panelLog(`${pid} -> downloading...`);
+      panelLog(pid + ' -> downloading...');
       button.click();
 
       markResult(pid, 'downloaded', filename);
       setTimeout(processNext, randDelay());
 
     } else if (state === 'purchase') {
-      log(`PID ${pid}: clicking purchase button: ${button.outerHTML}`);
-      panelLog(`${pid} -> purchasing...`);
+      log('PID ' + pid + ': clicking purchase button: ' + button.outerHTML);
+      panelLog(pid + ' -> purchasing...');
       button.click();
       // Navigation to cart happens automatically via form submit.
       // Watchdog: if we're still on this page after 20s, the submit didn't go through.
       setTimeout(() => {
         if (!isRunning() || getCurrentPid() !== pid || !isDetailPage()) return;
         if (bumpRetryAndCheckExceeded()) {
-          panelLog(`${pid} -> error (purchase click did nothing)`);
+          panelLog(pid + ' -> error (purchase click did nothing)');
           markResult(pid, 'error');
           processNext();
         } else {
-          panelLog(`${pid} -> still on page after click, retrying`);
+          panelLog(pid + ' -> still on page after click, retrying');
           const form = button.closest('form');
           if (form && form.requestSubmit) {
             try { form.requestSubmit(button); return; } catch (_) {}
@@ -466,18 +462,18 @@
     });
 
     if (link) {
-      log(`PID ${pid}: on cart page, clicking back-link`);
-      panelLog(`${pid} -> cart -> returning to detail`);
+      log('PID ' + pid + ': on cart page, clicking back-link');
+      panelLog(pid + ' -> cart -> returning to detail');
       setTimeout(() => link.click(), randDelay());
     } else if (bumpRetryAndCheckExceeded()) {
-      log(`PID ${pid}: stuck on cart page after repeated retries, marking error`);
-      panelLog(`${pid} -> error (stuck on cart page)`);
+      log('PID ' + pid + ': stuck on cart page after repeated retries, marking error');
+      panelLog(pid + ' -> error (stuck on cart page)');
       markResult(pid, 'error');
       setTimeout(processNext, randDelay());
     } else {
       // Fallback: navigate directly
-      log(`PID ${pid}: back-link not found on cart page, navigating directly`);
-      panelLog(`${pid} -> cart back-link missing, navigating directly`);
+      log('PID ' + pid + ': back-link not found on cart page, navigating directly');
+      panelLog(pid + ' -> cart back-link missing, navigating directly');
       setTimeout(() => navigateToDetail(pid), randDelay());
     }
   }
@@ -488,8 +484,8 @@
     const pid = getCurrentPid();
     if (!pid) return;
 
-    log(`PID ${pid}: unexpected page at ${location.pathname}, marking error`);
-    panelLog(`${pid} -> error (unexpected page)`);
+    log('PID ' + pid + ': unexpected page at ' + location.pathname + ', marking error');
+    panelLog(pid + ' -> error (unexpected page)');
     markResult(pid, 'error');
     setTimeout(processNext, randDelay());
   }
@@ -530,12 +526,12 @@
       // resume by navigating to the current PID if one is set, else processNext.
       const pid = getCurrentPid();
       if (pid && bumpRetryAndCheckExceeded()) {
-        log(`PID ${pid}: stuck off-flow after repeated retries, marking error`);
-        panelLog(`${pid} -> error (stuck, repeated bad navigation)`);
+        log('PID ' + pid + ': stuck off-flow after repeated retries, marking error');
+        panelLog(pid + ' -> error (stuck, repeated bad navigation)');
         markResult(pid, 'error');
         setTimeout(processNext, randDelay());
       } else if (pid) {
-        log(`On non-processing page during run, resuming with PID ${pid}`);
+        log('On non-processing page during run, resuming with PID ' + pid);
         setTimeout(() => navigateToDetail(pid), randDelay());
       } else {
         processNext();
