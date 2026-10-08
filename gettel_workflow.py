@@ -51,6 +51,13 @@ CONFIG = {
     "prop_id_col": "Prop ID",
     "term_years": 5,                                # assumed mortgage term (an assumption, not on title)
     "term_by_lender": {},                           # per-lender override, e.g. {"CANADA ICI": 10}
+    "rate_model": True,                             # needs refi_rates.py + data/*.csv next to this file
+    "goc_csv": "goc_5y.csv",                        # daily GoC 5-yr yields (date,yield); pulled from the Bank of Canada if missing
+    "refresh_goc": False,                           # True = pull fresh yields and overwrite goc_csv
+    "amort_years": 40,                              # CMHC-insured amortization assumption
+    "dscr_floor": 1.20,
+    "cmb_priced_lenders": [],                       # lender name fragments priced off CMB, e.g. ["COMPUTERSHARE", "PEOPLES TRUST"];
+                                                    # empty = apply the model to every lender
     "as_of": None,                                  # "YYYY-MM-DD" or None = today
     "reparse": False,                               # True = re-read every title, not just new ones
     "only_parsed": False,                           # True = output only rows that have a title
@@ -588,6 +595,42 @@ def load_cmb_table(cfg, log=print):
 # ## 5. Merge into the database and write one Excel file
 
 # %%
+RATE_COLS = ["Orig Rate Low (%)", "Orig Rate Base (%)", "Orig Rate High (%)",
+             "Renewal Rate Low (%)", "Renewal Rate Base (%)", "Renewal Rate High (%)",
+             "Payment Shock Base (%)", "DSCR at Renewal (base)", "Distress Status", "Rate Confidence", "Rate Model Note"]
+
+
+def rate_columns(model, res, rec, cfg):
+    """Run the CMB rate model for the mortgage that drives the refi date. Returns output columns."""
+    rr, daily, _ = model
+    m = res["mortgage"]
+    keys = [k.upper() for k in cfg.get("cmb_priced_lenders") or []]
+    if keys and not any(k in str(m.get("lender") or "").upper() for k in keys):
+        return {"Rate Model Note": "Lender not on cmb_priced_lenders list; CMB rate model not applied"}
+    principal = _amt(m)
+    if not principal:
+        return {"Rate Model Note": "Mortgage amount missing"}
+    price, cap = rec.get("Sale Price"), rec.get("Cap Rate")
+    noi = float(price) * float(cap) / 100 if pd.notna(price) and pd.notna(cap) and float(cap) > 0 else None
+    try:
+        r = rr.screen_loan(daily, m["date"], principal, noi=noi, noi_at_orig=noi,
+                           amort_years=cfg.get("amort_years", 40), term_years=res["term"],
+                           renewal_date=res["refi_date"], dscr_floor=cfg.get("dscr_floor", 1.20))
+    except ValueError as e:
+        return {"Rate Model Note": str(e)}
+    notes = [f"Principal = registered amount; {cfg.get('amort_years', 40)}-yr amortization assumed"]
+    if noi:
+        notes.append("NOI = sale price x cap rate at sale (not current)")
+    if r["renewal_basis"] == "current market":
+        notes.append(f"Renewal priced at current market rates (as of {r['renewal_rates_as_of']})")
+    out = {f"{k} Rate {c.title()} (%)": r[f"{k.lower()}_rate_{c}_pct"] for k in ("Orig", "Renewal") for c in rr.CASES}
+    out.update({"Payment Shock Base (%)": r["payment_shock_base_pct"], "DSCR at Renewal (base)": r.get("dscr_renewal_base"),
+                "Distress Status": r["status"],
+                "Rate Confidence": f"orig: {r['lender_confidence_orig']}; renewal: {r['lender_confidence_renewal']}",
+                "Rate Model Note": "; ".join(notes)})
+    return out
+
+
 def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=print):
     base = cfg["base"]
     pid_col = cfg["prop_id_col"]
@@ -624,6 +667,17 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
             exceptions.append(("Scraper: no title downloaded", pid, "", f"Status: {status}"))
         for f in org_report["orphans"]:
             exceptions.append(("Unmatched PDF in inbox", "", f, "Not referenced by any scraper CSV"))
+
+    rate_model = None
+    if cfg.get("rate_model", True):
+        try:
+            import refi_rates as rr
+            tables = rr.load_tables()
+            goc = rr.load_goc(resolve(base, cfg.get("goc_csv") or "goc_5y.csv"), cfg.get("refresh_goc", False), log=log)
+            rate_model = (rr, rr.build_daily_series(goc, tables), tables)
+        except Exception as e:
+            exceptions.append(("Rate model skipped", "", "", f"{type(e).__name__}: {e}"))
+            log(f"[WARN] Rate model skipped: {type(e).__name__}: {e}")
 
     mort_by_pid = {pid: g[g.file == chosen.loc[pid, "file"]] for pid, g in mortgages.groupby("pid") if pid in chosen.index}
     max_n = max([3] + [len(g) for g in mort_by_pid.values()])
@@ -665,6 +719,8 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
             out.update({"Refi Window": refi_window_label(res["months"]), "Months to Refi": res["months"],
                         "Est. Refi Date": key, "5 Yr CMB": rate,
                         "Risk": tier if tier is not None else "No CMB data"})
+        if rate_model and res["include"] == "Yes":
+            out.update(rate_columns(rate_model, res, rec, cfg))
         out.update({"Title File": info.file, "Title Certified": cert})
         for n in range(1, max_n + 1):
             m = mlist[n - 1] if n <= len(mlist) else {}
@@ -675,7 +731,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
 
     new_cols = pd.DataFrame(rows, index=db.index)
     order = ["Refi Include", "Refi Signal", "Refi Flag", "Refi Window", "Months to Refi", "Est. Refi Date",
-             "5 Yr CMB", "Risk", "Term Assumed (yrs)", "Renewal Est. Date", "Renewal Est. Months",
+             "5 Yr CMB", "Risk"] + RATE_COLS + ["Term Assumed (yrs)", "Renewal Est. Date", "Renewal Est. Months",
              "Title File", "Title Certified", "Title Age (months)"] + [c for c in new_cols.columns if c.startswith("Mortgage")]
     new_cols = new_cols.reindex(columns=order)
     result = pd.concat([db.drop(columns=[c for c in new_cols.columns if c in db.columns]), new_cols], axis=1)
@@ -687,7 +743,12 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
 
     detail = mortgages.merge(chosen.reset_index()[["pid", "file"]], on=["pid", "file"])
     exc_df = pd.DataFrame(exceptions, columns=["Type", "PID", "File", "Detail"])
-    write_excel(resolve(base, cfg["output"]), result, detail, discharges, exc_df, cmb)
+    extra = {}
+    if rate_model:
+        cmb_t, band_t = rate_model[2]
+        extra = {"CMB Spreads": cmb_t.assign(issue_date=cmb_t["issue_date"].dt.date),
+                 "Lender Band": band_t.assign(quarter=band_t["quarter"].astype(str))}
+    write_excel(resolve(base, cfg["output"]), result, detail, discharges, exc_df, cmb, extra)
 
     n = result["Refi Include"].value_counts().to_dict()
     log(f"Output: {resolve(base, cfg['output'])}")
@@ -696,7 +757,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
     return result, exc_df
 
 
-def write_excel(path, main, detail, discharges, exceptions, cmb):
+def write_excel(path, main, detail, discharges, exceptions, cmb, extra=None):
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
@@ -708,6 +769,8 @@ def write_excel(path, main, detail, discharges, exceptions, cmb):
         discharges.to_excel(xw, sheet_name="Discharges", index=False)
         exceptions.to_excel(xw, sheet_name="Exceptions", index=False)
         cmb_df.to_excel(xw, sheet_name="Sheet2", index=False)
+        for name, frame in (extra or {}).items():
+            frame.to_excel(xw, sheet_name=name, index=False)
         fills = {"Yes": "E2EFDA", "No": "FADADD", "Pending": "F2F2F2"}
         for ws in xw.book.worksheets:
             for c in ws[1]:
@@ -729,6 +792,8 @@ def write_excel(path, main, detail, discharges, exceptions, cmb):
                         c.number_format = "#,##0"
                     elif head in ("5 Yr CMB", "Estimated 5-Yr CMB Rate"):
                         c.number_format = "0.00%"
+                    elif head.endswith("(%)"):
+                        c.number_format = "0.00"
             if ws.title == "Sheet1":
                 ci = [c.value for c in ws[1]].index("Refi Include") + 1
                 for row in ws.iter_rows(min_row=2, min_col=ci, max_col=ci):

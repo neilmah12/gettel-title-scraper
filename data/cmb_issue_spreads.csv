@@ -1,0 +1,21 @@
+issue_date,series,issue_yield_pct,boc_published_bps,calc_daily_close_bps,dealer_gspread_bps,yield_source,spread_bps,spread_method
+2021-12-14,105,1.592,,30.2,,circular,30.2,calc_daily_close
+2022-03-15,77d,2.342,,37.2,42.5,circular,37.2,calc_daily_close
+2022-06-14,109,3.85,,29.0,37.5,circular,29.0,calc_daily_close
+2022-09-15,110,3.61,,18.0,,circular,18.0,calc_daily_close
+2022-12-14,110b,3.21,,27.0,27.0,computed from price (matches circular),27.0,calc_daily_close
+2023-03-15,113,3.124,,27.4,29.0,circular,27.4,calc_daily_close
+2023-06-14,115,3.957,,23.7,25.5,circular,23.7,calc_daily_close
+2023-09-15,117,4.275,,25.5,,circular,25.5,calc_daily_close
+2023-12-14,117b,3.49,,25.0,22.0,computed from price (matches circular),25.0,calc_daily_close
+2024-03-13,120,3.716,24.5,21.6,,BoC dataset,24.5,boc_published
+2024-06-18,120b,3.499,21.0,21.9,,BoC dataset,21.0,boc_published
+2024-09-19,123,2.944,19.5,22.4,,BoC dataset,19.5,boc_published
+2024-12-12,123b,3.086,18.5,14.6,,BoC dataset,18.5,boc_published
+2025-03-14,126,2.895,18.0,17.5,,BoC dataset,18.0,boc_published
+2025-06-13,126b,3.106,16.0,14.6,,BoC dataset,16.0,boc_published
+2025-09-19,129,2.882,15.0,14.2,,BoC dataset,15.0,boc_published
+2025-12-12,129b,3.129,12.0,11.9,,BoC dataset,12.0,boc_published
+2026-03-13,132,3.206,20.0,13.6,,BoC dataset,20.0,boc_published
+2026-06-12,132b,3.182,12.5,14.2,,BoC dataset,12.5,boc_published
+2026-09-17,135,3.664,13.0,12.4,,BoC dataset,13.0,boc_published

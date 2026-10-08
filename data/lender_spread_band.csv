@@ -1,0 +1,22 @@
+quarter,low_bps,base_bps,high_bps,confidence,note
+2021Q4,42.0,52.0,65,partly sourced,sharpest low-40s (CMLS); base/high assumed
+2022Q1,45.0,52.0,60,partly sourced,high-quality 45-50 (CMLS); base/high assumed
+2022Q2,42.5,67.5,70,sourced,sharpest 40-45; base is INDEX AVERAGE 65-70 (different definition)
+2022Q3,47.0,57.0,65,sourced,sharpest mid-high 40s; typical mid-high 50s; high assumed
+2022Q4,45.0,57.0,65,estimated,no stated range; bracketed by 2022Q3 and 2023Q1
+2023Q1,45.0,55.0,60,partly sourced,sharpest mid-40s (CMLS); base/high assumed
+2023Q2,43.0,55.0,60,partly sourced,sharpest low-mid 40s (CMLS); base/high assumed
+2023Q3,43.0,55.0,60,sourced,high-quality low-mid 40s; typical 50-60
+2023Q4,43.0,55.0,60,sourced,high-quality low-mid 40s; typical 50-60
+2024Q1,43.0,55.0,60,sourced,high-quality low-mid 40s; typical 50-60
+2024Q2,45.0,55.0,70,assumed,no public source; extrapolated
+2024Q3,45.0,55.0,70,assumed,no public source; extrapolated
+2024Q4,45.0,55.0,70,assumed,no public source; extrapolated
+2025Q1,45.0,55.0,70,assumed,no public source; extrapolated
+2025Q2,45.0,55.0,70,assumed,no public source; extrapolated
+2025Q3,45.0,55.0,70,assumed,no public source; extrapolated
+2025Q4,45.0,55.0,70,assumed,no public source; extrapolated
+2026Q1,45.0,55.0,70,assumed,no public source; extrapolated
+2026Q2,45.0,55.0,70,assumed,no public source; extrapolated
+2026Q3,45.0,55.0,70,assumed,no public source; extrapolated
+2026Q4,45.0,55.0,70,assumed,no public source; extrapolated

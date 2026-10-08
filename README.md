@@ -39,9 +39,21 @@ Among mortgages that are not discharged and still inside their term (registered 
 
 Note that Alberta titles drop discharged mortgages, so `Mortgage#_Discharged = No` mostly means "still listed", not "confirmed active".
 
+## Rate model (renewal rate and distress)
+
+`refi_rates.py` (adapted from `refi_distress_screen.py`) prices CMHC-insured 5-year fixed loans:
+`all-in = GoC 5-yr + CMB spread + lender spread over CMB`. Tables live in `data/cmb_issue_spreads.csv` (add each new CMB issue) and `data/lender_spread_band.csv` (replace the assumed 2024Q2+ rows with real quotes).
+
+For each property with a mortgage `In term`, the workflow adds original rate (low/base/high), renewal rate, payment shock, DSCR at renewal and a `Distress Status` (`distressed` fails the 1.20 floor even at the low lender spread, `watch` only at the high spread, `ok`, or `needs NOI`).
+
+- **GoC yields:** read from `goc_5y.csv` (columns `date,yield`) in the base folder. If the file is missing, the workflow pulls Bank of Canada series `BD.CDN.5YR.DQ.YLD` and saves it; `refresh_goc` forces a new pull. Where the Bank of Canada host is blocked (e.g. the cloud session), run the pull once locally or in Colab and put `goc_5y.csv` in the folder; otherwise the rate columns stay blank and the Exceptions sheet says why.
+- **Inputs:** principal = registered mortgage amount; amortization 40 years (`amort_years`); NOI = Sale Price x Cap Rate at sale, not current (a Cap Rate of 0 counts as missing).
+- **Scope:** only mortgages `In term`. Anything before 2021-12-14 has no CMB data. Set `cmb_priced_lenders` (e.g. `["COMPUTERSHARE", "PEOPLES TRUST"]`) to apply the model to CMB-priced lenders only; empty applies it to all, which overstates the CMHC assumption for conventional bank loans.
+- `Rate Confidence` shows how solid the lender band was at origination and at renewal.
+
 ## Output workbook
 
-`Sheet1` (database plus mortgage and refi columns), `Mortgage Detail`, `Discharges`, `Exceptions` (failed PDFs, unmatched discharges, missing titles, instrument-count mismatches), `Sheet2` (CMB table used).
+`Sheet1` (database plus mortgage and refi columns), `Mortgage Detail`, `Discharges`, `Exceptions` (failed PDFs, unmatched discharges, missing titles, instrument-count mismatches), `Sheet2` (CMB table used), `CMB Spreads` and `Lender Band` (rate model tables used).
 
 ## Tests
 
