@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper
 // @namespace    https://github.com/neilmah12/gettel-title-scraper
-// @version      1.3.4
+// @version      1.3.5
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -416,10 +416,26 @@
       setTimeout(processNext, randDelay());
 
     } else if (state === 'purchase') {
-      log(`PID ${pid}: clicking purchase button`);
+      log(`PID ${pid}: clicking purchase button: ${button.outerHTML}`);
       panelLog(`${pid} → purchasing…`);
       button.click();
-      // Navigation to cart happens automatically via form submit
+      // Navigation to cart happens automatically via form submit.
+      // Watchdog: if we're still on this page after 20s, the submit didn't go through.
+      setTimeout(() => {
+        if (!isRunning() || getCurrentPid() !== pid || !isDetailPage()) return;
+        if (bumpRetryAndCheckExceeded()) {
+          panelLog(`${pid} → error (purchase click did nothing)`);
+          markResult(pid, 'error');
+          processNext();
+        } else {
+          panelLog(`${pid} → still on page after click, retrying`);
+          const form = button.closest('form');
+          if (form && form.requestSubmit) {
+            try { form.requestSubmit(button); return; } catch (_) {}
+          }
+          navigateToDetail(pid);
+        }
+      }, 20000);
 
     } else {
       // no_title
