@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Gettel Title Scraper 2
 // @namespace    https://github.com/neilmah12/gettel-title-scraper/v2
-// @version      1.3.7
+// @version      1.3.8
 // @description  Automate purchasing and downloading land title PDFs from database.gettelnetwork.com
 // @author       Refi-Map
 // @match        https://database.gettelnetwork.com/*
@@ -125,7 +125,9 @@
       const r = results[pid];
       rows.push([r.pid, r.status, r.filename || '', r.timestamp || '']);
     }
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const Q = String.fromCharCode(34);
+    const esc = c => Q + String(c).split(Q).join(Q + Q) + Q;
+    const csv = rows.map(r => r.map(esc).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
