@@ -1,0 +1,22 @@
+quarter,low_bps,base_bps,high_bps,confidence,note
+2021Q4,125,150,175,partly sourced,CMLS Q4 2021: 2.75% typical 5-yr coupon vs 1.25% GoC (150 bps); low/high assumed
+2022Q1,190,230,250,partly sourced,2022 range from Intellifi year-end: typical 210-250 over GoC; top tier 190-200
+2022Q2,190,230,250,partly sourced,2022 year-end range applied across the year
+2022Q3,190,230,250,partly sourced,2022 year-end range applied across the year
+2022Q4,190,230,250,sourced,Intellifi Q4 2022: typical 210-250; top tier 190-200
+2023Q1,170,190,250,partly sourced,CMLS Q1 2023: top-tier transactions 190-210; weaker/smaller 210-250 assumed
+2023Q2,170,190,250,partly sourced,2023 range applied
+2023Q3,170,190,250,sourced,CMLS Q3 2023: best 160-170; second tier 180-190; weaker 210-250 assumed
+2023Q4,170,190,250,partly sourced,2023 range applied
+2024Q1,150,170,190,estimated,no public Alberta multifamily series; anchored to tightening national conditions
+2024Q2,150,170,190,estimated,no public Alberta multifamily series
+2024Q3,150,170,190,estimated,no public Alberta multifamily series
+2024Q4,150,170,190,estimated,no public Alberta multifamily series
+2025Q1,135,155,180,estimated,no public Alberta multifamily series
+2025Q2,135,155,180,estimated,no public Alberta multifamily series
+2025Q3,135,155,180,estimated,no public Alberta multifamily series
+2025Q4,135,155,180,estimated,no public Alberta multifamily series
+2026Q1,125,150,175,estimated,no public Alberta multifamily series
+2026Q2,125,150,175,estimated,no public Alberta multifamily series
+2026Q3,125,150,175,estimated,no public Alberta multifamily series
+2026Q4,125,150,175,estimated,no public Alberta multifamily series

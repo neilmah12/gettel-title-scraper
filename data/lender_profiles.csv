@@ -1,0 +1,8 @@
+pattern,field,score,year_from,year_to,note
+COMPUTERSHARE,lender,3,,,Title custodian/nominee for originators or servicers; not the economic lender (CMLS and CMHC NHA MBS guide)
+PEOPLES TRUST,lender,3,,,Predominantly CMHC-insured multifamily (company reports 2019 and 2025)
+INDUSTRIAL ALLIANCE,lender,3,,,Mostly insured multi-residential portfolio (iA 2023 disclosure)
+CANADA ICI,lender,3,2021,,CMHC approved lender from 2021 (Canada ICI fact sheet 2022)
+CANADA ICI,co,3,2021,,Originator named in a c/o line behind a custodian; CMHC approved lender from 2021
+CMLS,co,5,,,CMLS registers insured MBS/CMB mortgages to Computershare (CMLS publication)
+KV CAPITAL,lender,-6,,2023,Private commercial mortgage lender through 2023; CMHC platform only from 2024

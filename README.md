@@ -39,21 +39,35 @@ Among mortgages that are not discharged and still inside their term (registered 
 
 Note that Alberta titles drop discharged mortgages, so `Mortgage#_Discharged = No` mostly means "still listed", not "confirmed active".
 
-## Rate model (renewal rate and distress)
+## Rate model: insured vs conventional
 
-`refi_rates.py` (adapted from `refi_distress_screen.py`) prices CMHC-insured 5-year fixed loans:
-`all-in = GoC 5-yr + CMB spread + lender spread over CMB`. Tables live in `data/cmb_issue_spreads.csv` (add each new CMB issue) and `data/lender_spread_band.csv` (replace the assumed 2024Q2+ rows with real quotes).
+A title shows the mortgagee name (and sometimes a `c/o` line), not whether the loan is CMHC-insured, so every in-term mortgage is priced two ways and given an evidence score.
 
-For each property with a mortgage `In term`, the workflow adds original rate (low/base/high), renewal rate, payment shock, DSCR at renewal and a `Distress Status` (`distressed` fails the 1.20 floor even at the low lender spread, `watch` only at the high spread, `ok`, or `needs NOI`).
+**Scenarios** (`refi_rates.py`, adapted from `refi_distress_screen.py`; tables in `data/`)
+- *Insured:* `GoC 5-yr + CMB spread + lender spread over CMB` (`cmb_issue_spreads.csv`, `lender_spread_band.csv`), 40-year amortization (`amort_years`).
+- *Conventional:* `GoC 5-yr + conventional spread` (`conventional_spread_band.csv`, low/base/high by quarter, mostly sourced from CMLS/Intellifi through 2023 and estimated after), 25-year amortization (`conv_amort_years`).
+- Both use the same DSCR floor (1.20) and report original rate, renewal rate, payment shock, DSCR at renewal and a status (`distressed` fails the floor even at the low spread, `watch` only at the high spread, `ok`, `needs NOI`).
 
-- **GoC yields:** `data/goc_5y.csv` ships as a seed (Bank of Canada V39053, the daily 5-year benchmark, same series as `BD.CDN.5YR.DQ.YLD`; 2021-07-02 to 2026-10-08). A `goc_5y.csv` in the base folder takes priority. You can also point `goc_csv` straight at a raw Bank of Canada "Selected Bond Yields" download; the loader reads the daily block and skips bank holidays. `refresh_goc` pulls fresh yields from the Valet API where that host is reachable. The Exceptions sheet warns when the last yield is more than 7 days before the as-of date.
-- **Inputs:** principal = registered mortgage amount; amortization 40 years (`amort_years`); NOI = Sale Price x Cap Rate at sale, not current (a Cap Rate of 0 counts as missing).
-- **Scope:** only mortgages `In term`. Anything before 2021-12-14 has no CMB data. Set `cmb_priced_lenders` (e.g. `["COMPUTERSHARE", "PEOPLES TRUST"]`) to apply the model to CMB-priced lenders only; empty applies it to all, which overstates the CMHC assumption for conventional bank loans.
-- `Rate Confidence` shows how solid the lender band was at origination and at renewal.
+**Evidence score** (`financing.py`, weights in `data/lender_profiles.csv`, editable)
+- Lender profiles on the mortgagee or the `c/o` originator behind a custodian: e.g. Computershare +3, Peoples Trust +3, iA +3, Canada ICI +3 (2021 onward, also as a `c/o`), CMLS as `c/o` +5, KV Capital -6 (through 2023).
+- Private individual mortgagee -10 (an insured loan needs an approved lender).
+- Title LTV above 75% after a financed premium (`financing_premium_pct`, default 4%): +2 when the mortgage was registered within 90 days of the sale.
+- Serviceable at 40-year insured terms but not at 30-year conventional terms: +2.
+- Banks, credit unions and assignment-of-rents caveats carry no weight.
+- `>= +8` Likely insured, `<= -6` Likely conventional, otherwise Unknown. `Financing Evidence` lists exactly which tests fired.
+- `Distress Status` follows the class; when Unknown and the two scenarios disagree it reads `Uncertain (insured X; conventional Y)`.
+- Confirmed a loan from a commitment letter? Add `Prop ID, Financing Class (Insured/Conventional), Note` rows to `financing_overrides.csv` in the base folder.
+
+**Other inputs**
+- **GoC yields:** `data/goc_5y.csv` ships as a seed (Bank of Canada V39053, the daily 5-year benchmark, same series as `BD.CDN.5YR.DQ.YLD`). A `goc_5y.csv` in the base folder takes priority, or point `goc_csv` at a raw Bank of Canada "Selected Bond Yields" download. `refresh_goc` pulls from the Valet API where reachable. The Exceptions sheet warns when the last yield is more than 7 days old.
+- Principal = registered mortgage amount; NOI = Sale Price x Cap Rate at sale, not current (Cap Rate 0 counts as missing). Titles show only the registered amount, which may exceed the advance for collateral charges.
+- Only mortgages `In term` are modeled; anything before 2021-12-14 has no CMB data.
+- `Rate Confidence` shows how solid the insured lender band was at origination and renewal.
+- `Refi Mortgage` names the mortgage driving each refi date.
 
 ## Output workbook
 
-`Sheet1` (database plus mortgage and refi columns), `Mortgage Detail`, `Discharges`, `Exceptions` (failed PDFs, unmatched discharges, missing titles, instrument-count mismatches), `Sheet2` (CMB table used), `CMB Spreads` and `Lender Band` (rate model tables used).
+`Sheet1` (database plus mortgage and refi columns), `Mortgage Detail`, `Discharges`, `Exceptions` (failed PDFs, unmatched discharges, missing titles, instrument-count mismatches), `Sheet2` (CMB table used), `CMB Spreads`, `Lender Band`, `Conv Spread Band` and `Lender Profiles` (rate model tables used).
 
 ## Tests
 

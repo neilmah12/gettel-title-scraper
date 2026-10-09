@@ -34,6 +34,13 @@ def load_tables(data_dir=DATA_DIR):
     return cmb, band
 
 
+def load_conventional_band(data_dir=DATA_DIR):
+    """Conventional (uninsured) multifamily spread over the GoC 5-yr yield, low/base/high bps by quarter."""
+    band = pd.read_csv(os.path.join(data_dir, "conventional_spread_band.csv"))
+    band["quarter"] = pd.PeriodIndex(band["quarter"], freq="Q")
+    return band
+
+
 # --------------------------------------------------------------------------- GoC yields
 def parse_boc_download(path):
     """
@@ -128,6 +135,21 @@ def build_daily_series(goc, tables, cmb_method="published"):
     for c in CASES:
         df[f"lender_{c}_bps"] = lb[f"{c}_bps"].reindex(qs).to_numpy()
         df[f"all_in_{c}_pct"] = df["goc_5y_yield"] + (df["cmb_spread_bps"] + df[f"lender_{c}_bps"]) / 100
+    df["lender_confidence"] = lb["confidence"].reindex(qs).to_numpy()
+    df = df[df.index >= first]
+    df.attrs["first_covered"] = first
+    return df
+
+
+def build_conventional_series(goc, band):
+    """GoC + conventional spread band by quarter, shaped like build_daily_series() so screen_loan() works on it."""
+    lb = band.set_index("quarter")
+    first, last_q = lb.index.min().start_time, lb.index.max()
+    df = pd.DataFrame({"goc_5y_yield": goc.sort_index()})
+    qs = pd.PeriodIndex([min(q, last_q) for q in df.index.to_period("Q")], freq="Q")
+    for c in CASES:
+        df[f"lender_{c}_bps"] = lb[f"{c}_bps"].reindex(qs).to_numpy()
+        df[f"all_in_{c}_pct"] = df["goc_5y_yield"] + df[f"lender_{c}_bps"] / 100
     df["lender_confidence"] = lb["confidence"].reindex(qs).to_numpy()
     df = df[df.index >= first]
     df.attrs["first_covered"] = first

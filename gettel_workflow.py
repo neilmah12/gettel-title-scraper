@@ -56,12 +56,10 @@ CONFIG = {
     "refresh_goc": False,                           # True = pull fresh yields and overwrite goc_csv
     "amort_years": 40,                              # CMHC-insured amortization assumption
     "dscr_floor": 1.20,
-    "cmb_priced_lenders": [],                       # lender name fragments priced off CMB, e.g. ["COMPUTERSHARE", "PEOPLES TRUST"];
-                                                    # empty = apply the model to every lender
-    "as_of": None,                                  # "YYYY-MM-DD" or None = today
-    "reparse": False,                               # True = re-read every title, not just new ones
-    "only_parsed": False,                           # True = output only rows that have a title
-    "skip_organize": False,
+    "conv_amort_years": 25,                         # conventional scenario amortization (30 is the sensitivity)
+    "financing_premium_pct": 4.0,                   # assumed financed CMHC premium, used only for the title LTV test
+    "lender_profiles": None,                        # None = data/lender_profiles.csv
+    "financing_overrides": "financing_overrides.csv",  # optional: Prop ID, Financing Class (Insured/Conventional), Note
 }
 # ==================================================================
 
@@ -294,12 +292,29 @@ def parse_lenders(lines):
     return lenders
 
 
+def parse_lender_co(lines):
+    """'C/O ...' lines that sit with a MORTGAGEE (e.g. the originator behind a Computershare custodian)."""
+    cos, i = [], 0
+    while i < len(lines):
+        if LENDER_RE.match(lines[i]):
+            for x in lines[i + 1:i + 4]:
+                if LENDER_RE.match(x) or re.match(r"^ORIGINAL", x, re.I):
+                    break
+                m = re.match(r"^C/O\s+(.+)", x, re.I)
+                if m:
+                    cos.append(m.group(1).strip())
+                    break
+        i += 1
+    return "; ".join(cos) or None
+
+
 def parse_mortgage_entry(entry):
     m = AMOUNT_RE.search(" ".join(entry["lines"]))
     return {
         "regnum": entry["regnum"], "regnum_norm": norm_regnum(entry["regnum"]),
         "date": parse_dmy(entry["date"]),
         "lender": "; ".join(parse_lenders(entry["lines"])) or None,
+        "lender_co": parse_lender_co(entry["lines"]),
         "amount": float(m.group(1).replace(",", "")) if m else None,
         "discharged": "No", "discharged_by": None, "notes": "",
     }
@@ -407,7 +422,7 @@ def process_title(path):
 # %%
 MANIFEST_COLS = ["pid", "file", "size", "mtime", "status", "parsed_at", "n_mortgages", "n_discharges",
                  "certified", "warnings"]
-MORTGAGE_COLS = ["pid", "file", "regnum", "date", "lender", "amount", "discharged", "discharged_by"]
+MORTGAGE_COLS = ["pid", "file", "regnum", "date", "lender", "lender_co", "amount", "discharged", "discharged_by"]
 DISCHARGE_COLS = ["pid", "file", "regnum", "date", "ref_regnum", "ref_on_title", "partial", "ref_lender"]
 
 
@@ -433,6 +448,9 @@ def save_state(base, manifest, mortgages, discharges):
 def parse_titles(cfg, log=print):
     base = cfg["base"]
     manifest, mortgages, discharges = load_state(base)
+    if len(manifest) and "lender_co" not in mortgages.columns:
+        cfg = {**cfg, "reparse": True}                 # state from an older version: re-read once for the c/o column
+        mortgages = mortgages.reindex(columns=MORTGAGE_COLS)
     title_dir = os.path.join(base, TITLE_DIR)
     files = sorted(f for f in os.listdir(title_dir) if f.lower().endswith(".pdf")) if os.path.isdir(title_dir) else []
     done = {r.file: (r.size, r.mtime) for r in manifest.itertuples() if r.status == "parsed"}
@@ -598,37 +616,78 @@ def load_cmb_table(cfg, log=print):
 # %%
 RATE_COLS = ["Orig Rate Low (%)", "Orig Rate Base (%)", "Orig Rate High (%)",
              "Renewal Rate Low (%)", "Renewal Rate Base (%)", "Renewal Rate High (%)",
-             "Payment Shock Base (%)", "DSCR at Renewal (base)", "Distress Status", "Rate Confidence", "Rate Model Note"]
+             "Payment Shock Base (%)", "DSCR at Renewal (base)", "Insured Status", "Rate Confidence",
+             "Conv Orig Rate (%)", "Conv Renewal Rate (%)", "Conv Payment Shock (%)", "Conv DSCR at Renewal",
+             "Conv Status", "Financing Class", "Financing Score", "Financing Evidence", "Distress Status",
+             "Rate Model Note"]
 
 
-def rate_columns(model, res, rec, cfg):
-    """Run the CMB rate model for the mortgage that drives the refi date. Returns output columns."""
-    rr, daily, _ = model
+def load_overrides(cfg, base):
+    """Optional manual financing classes (e.g. confirmed from a commitment letter): {Prop ID: (class, note)}."""
+    path = resolve(base, cfg.get("financing_overrides"))
+    if not path or not os.path.exists(path):
+        return {}
+    df = pd.read_csv(path, dtype=str).fillna("")
+    return {r["Prop ID"].strip(): (r.get("Financing Class", "").strip(), r.get("Note", "").strip())
+            for _, r in df.iterrows() if r.get("Prop ID")}
+
+
+def scenario_columns(model, res, rec, cfg, override=None):
+    """
+    Insured (CMB) and conventional (GoC + spread) rate scenarios for the mortgage that drives the refi
+    date, an insured-vs-conventional evidence score, and one combined Distress Status.
+    """
+    rr, ins, conv, fin, profiles = model
     m = res["mortgage"]
-    keys = [k.upper() for k in cfg.get("cmb_priced_lenders") or []]
-    if keys and not any(k in str(m.get("lender") or "").upper() for k in keys):
-        return {"Rate Model Note": "Lender not on cmb_priced_lenders list; CMB rate model not applied"}
     principal = _amt(m)
     if not principal:
         return {"Rate Model Note": "Mortgage amount missing"}
     price, cap = rec.get("Sale Price"), rec.get("Cap Rate")
     noi = float(price) * float(cap) / 100 if pd.notna(price) and pd.notna(cap) and float(cap) > 0 else None
+    common = dict(noi=noi, noi_at_orig=noi, term_years=res["term"], renewal_date=res["refi_date"],
+                  dscr_floor=cfg.get("dscr_floor", 1.20))
+    notes, r_i, r_c = [], None, None
     try:
-        r = rr.screen_loan(daily, m["date"], principal, noi=noi, noi_at_orig=noi,
-                           amort_years=cfg.get("amort_years", 40), term_years=res["term"],
-                           renewal_date=res["refi_date"], dscr_floor=cfg.get("dscr_floor", 1.20))
+        r_i = rr.screen_loan(ins, m["date"], principal, amort_years=cfg.get("amort_years", 40), **common)
     except ValueError as e:
-        return {"Rate Model Note": str(e)}
-    notes = [f"Principal = registered amount; {cfg.get('amort_years', 40)}-yr amortization assumed"]
+        notes.append(f"Insured scenario: {e}")
+    try:
+        r_c = rr.screen_loan(conv, m["date"], principal, amort_years=cfg.get("conv_amort_years", 25), **common)
+    except ValueError as e:
+        notes.append(f"Conventional scenario: {e}")
+    if r_i is None and r_c is None:
+        return {"Rate Model Note": "; ".join(notes)}
+
+    out = {}
+    if r_i:
+        out.update({f"{k} Rate {c.title()} (%)": r_i[f"{k.lower()}_rate_{c}_pct"] for k in ("Orig", "Renewal") for c in rr.CASES})
+        out.update({"Payment Shock Base (%)": r_i["payment_shock_base_pct"], "DSCR at Renewal (base)": r_i.get("dscr_renewal_base"),
+                    "Insured Status": r_i["status"],
+                    "Rate Confidence": f"orig: {r_i['lender_confidence_orig']}; renewal: {r_i['lender_confidence_renewal']}"})
+    if r_c:
+        out.update({"Conv Orig Rate (%)": r_c["orig_rate_base_pct"], "Conv Renewal Rate (%)": r_c["renewal_rate_base_pct"],
+                    "Conv Payment Shock (%)": r_c["payment_shock_base_pct"], "Conv DSCR at Renewal": r_c.get("dscr_renewal_base"),
+                    "Conv Status": r_c["status"]})
+
+    # insured vs conventional evidence
+    d40 = d30 = None
+    if noi and r_i and r_c:
+        d40 = noi / (12 * rr.payment(principal, r_i["orig_rate_base_pct"], 40))
+        d30 = noi / (12 * rr.payment(principal, r_c["orig_rate_base_pct"], 30))
+    sdate = rec.get("Sale Date")
+    score, cls, evidence = fin.classify(m, float(price) if pd.notna(price) else None,
+                                        sdate.date() if pd.notna(sdate) else None, d40, d30, profiles,
+                                        cfg.get("financing_premium_pct", 4.0))
+    if override and override[0]:
+        cls = {"insured": "Likely insured", "conventional": "Likely conventional"}.get(override[0].lower(), cls)
+        evidence = f"Manual override ({override[0]}{': ' + override[1] if override[1] else ''}); {evidence}"
+    out.update({"Financing Class": cls, "Financing Score": score, "Financing Evidence": evidence,
+                "Distress Status": fin.combine_status(cls, (r_i or {}).get("status", "n/a"), (r_c or {}).get("status", "n/a"))})
+    notes.append(f"Principal = registered amount; insured {cfg.get('amort_years', 40)}-yr vs conventional "
+                 f"{cfg.get('conv_amort_years', 25)}-yr amortization assumed")
     if noi:
         notes.append("NOI = sale price x cap rate at sale (not current)")
-    if r["renewal_basis"] == "current market":
-        notes.append(f"Renewal priced at current market rates (as of {r['renewal_rates_as_of']})")
-    out = {f"{k} Rate {c.title()} (%)": r[f"{k.lower()}_rate_{c}_pct"] for k in ("Orig", "Renewal") for c in rr.CASES}
-    out.update({"Payment Shock Base (%)": r["payment_shock_base_pct"], "DSCR at Renewal (base)": r.get("dscr_renewal_base"),
-                "Distress Status": r["status"],
-                "Rate Confidence": f"orig: {r['lender_confidence_orig']}; renewal: {r['lender_confidence_renewal']}",
-                "Rate Model Note": "; ".join(notes)})
+    out["Rate Model Note"] = "; ".join(notes)
     return out
 
 
@@ -669,9 +728,10 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         for f in org_report["orphans"]:
             exceptions.append(("Unmatched PDF in inbox", "", f, "Not referenced by any scraper CSV"))
 
-    rate_model = None
+    rate_model, overrides = None, load_overrides(cfg, base)
     if cfg.get("rate_model", True):
         try:
+            import financing as fin
             import refi_rates as rr
             tables = rr.load_tables()
             goc_path = resolve(base, cfg.get("goc_csv") or "goc_5y.csv")
@@ -682,7 +742,10 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
                 exceptions.append(("GoC data is stale", "", os.path.basename(goc_path),
                                    f"Last yield {goc.index.max().date()}; renewal rates use it as 'current market'. "
                                    "Update goc_5y.csv (Bank of Canada download or refresh_goc)."))
-            rate_model = (rr, rr.build_daily_series(goc, tables), tables)
+            band = rr.load_conventional_band()
+            profiles = fin.load_profiles(resolve(base, cfg.get("lender_profiles")))
+            rate_model = (rr, rr.build_daily_series(goc, tables), rr.build_conventional_series(goc, band), fin, profiles,
+                          tables, band)
         except Exception as e:
             exceptions.append(("Rate model skipped", "", "", f"{type(e).__name__}: {e}"))
             log(f"[WARN] Rate model skipped: {type(e).__name__}: {e}")
@@ -731,7 +794,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
                         "Est. Refi Date": key, "5 Yr CMB": rate,
                         "Risk": tier if tier is not None else ("No CMB data" if cmb else None)})
         if rate_model and res["include"] == "Yes":
-            out.update(rate_columns(rate_model, res, rec, cfg))
+            out.update(scenario_columns(rate_model[:5], res, rec, cfg, overrides.get(pid)))
         out.update({"Title File": info.file, "Title Certified": cert})
         for n in range(1, max_n + 1):
             m = mlist[n - 1] if n <= len(mlist) else {}
@@ -756,9 +819,11 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
     exc_df = pd.DataFrame(exceptions, columns=["Type", "PID", "File", "Detail"])
     extra = {}
     if rate_model:
-        cmb_t, band_t = rate_model[2]
+        cmb_t, band_t = rate_model[5]
         extra = {"CMB Spreads": cmb_t.assign(issue_date=cmb_t["issue_date"].dt.date),
-                 "Lender Band": band_t.assign(quarter=band_t["quarter"].astype(str))}
+                 "Lender Band": band_t.assign(quarter=band_t["quarter"].astype(str)),
+                 "Conv Spread Band": rate_model[6].assign(quarter=rate_model[6]["quarter"].astype(str)),
+                 "Lender Profiles": rate_model[4]}
     write_excel(resolve(base, cfg["output"]), result, detail, discharges, exc_df, cmb, extra)
 
     n = result["Refi Include"].value_counts().to_dict()
