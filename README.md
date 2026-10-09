@@ -65,6 +65,17 @@ A title shows the mortgagee name (and sometimes a `c/o` line), not whether the l
 - `Rate Confidence` shows how solid the insured lender band was at origination and renewal.
 - `Refi Mortgage` names the mortgage driving each refi date.
 
+## Prospecting lever
+
+A rough ranking for deciding who to call, not an underwriting result. Points are timing + size + stress (0 to 9); the cut-offs are constants at the top of `scenario_columns` in `gettel_workflow.py`.
+
+- **Timing:** months to refi, best at 7 to 18 (+3), 19 to 30 or under 6 (+2), 31 to 42 (+1).
+- **Size:** registered amount of the driving mortgage: $20M+ (+3), $5M+ (+2), $1.5M+ (+1).
+- **Stress:** worst-case DSCR at renewal under 1.0 (+3), 1.2 (+2), 1.35 (+1). The worst case is the lower of the insured and conventional DSCR unless the financing class is settled.
+- **Prospect Priority:** 6+ `Call now`, 4 to 5 `Worth a call`, 2 to 3 `Watch`, else `Low`. Mortgages past term get `Renewal watch` with the estimated next maturity.
+- **DSCR Range Low / High:** the spread between the two scenarios. A wide range means the answer depends on financing type.
+- **Data Confidence:** High with no doubts, Medium with one, Low with two or more. Doubts are no NOI, unknown financing type, amount above sale price, and the scenarios disagreeing. `Priority Why` spells out the points and doubts.
+
 ## Output workbook
 
 `Sheet1` (database plus mortgage and refi columns), `Mortgage Detail`, `Discharges`, `Exceptions` (failed PDFs, unmatched discharges, missing titles, instrument-count mismatches), `Sheet2` (CMB table used), `CMB Spreads`, `Lender Band`, `Conv Spread Band` and `Lender Profiles` (rate model tables used).

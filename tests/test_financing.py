@@ -81,6 +81,28 @@ class ParserCoTests(unittest.TestCase):
         self.assertIsNone(gw.parse_lender_co(["MORTGAGEE - ATB FINANCIAL.", "25TH FLOOR", "ORIGINAL PRINCIPAL AMOUNT: $1"]))
 
 
+class LeverTests(unittest.TestCase):
+    def test_big_stressed_loan_in_sweet_spot_is_call_now(self):
+        out = {"DSCR at Renewal (base)": 1.02, "Conv DSCR at Renewal": 0.75, "Financing Class": "Likely insured"}
+        r = gw.prospect_lever(out, 14, 80_893_080, 91_600_000, True)
+        self.assertEqual((r["Prospect Score"], r["Prospect Priority"]), (3 + 3 + 2, "Call now"))
+        self.assertEqual((r["DSCR Range Low"], r["DSCR Range High"]), (0.75, 1.02))
+
+    def test_unknown_class_uses_worst_case_dscr(self):
+        out = {"DSCR at Renewal (base)": 1.6, "Conv DSCR at Renewal": 0.95, "Financing Class": "Unknown"}
+        r = gw.prospect_lever(out, 25, 2_000_000, 3_000_000, True)
+        self.assertEqual(r["Prospect Score"], 2 + 1 + 3)
+        self.assertIn("financing type unknown", r["Priority Why"])
+        self.assertIn("scenarios disagree", r["Priority Why"])
+        self.assertEqual(r["Data Confidence"], "Low")
+
+    def test_no_noi_scores_no_stress_and_flags_doubt(self):
+        r = gw.prospect_lever({"Financing Class": "Likely conventional"}, 10, 6_000_000, 8_000_000, False)
+        self.assertEqual(r["Prospect Score"], 3 + 2 + 0)
+        self.assertEqual(r["Prospect Priority"], "Worth a call")
+        self.assertIsNone(r["DSCR Range Low"])
+
+
 class ConventionalSeriesTests(unittest.TestCase):
     def test_all_in_is_goc_plus_spread(self):
         idx = pd.bdate_range("2021-10-01", "2026-10-08")

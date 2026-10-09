@@ -619,7 +619,50 @@ RATE_COLS = ["Orig Rate Low (%)", "Orig Rate Base (%)", "Orig Rate High (%)",
              "Payment Shock Base (%)", "DSCR at Renewal (base)", "Insured Status", "Rate Confidence",
              "Conv Orig Rate (%)", "Conv Renewal Rate (%)", "Conv Payment Shock (%)", "Conv DSCR at Renewal",
              "Conv Status", "Financing Class", "Financing Score", "Title LTV", "Financing Evidence", "Distress Status",
+             "DSCR Range Low", "DSCR Range High", "Prospect Score", "Prospect Priority", "Data Confidence", "Priority Why",
              "Rate Model Note"]
+
+
+# Prospecting lever: judgement-call tiers, edit freely. Points: timing + size + stress (0 to 9).
+TIMING_PTS = [(6, 2), (18, 3), (30, 2), (42, 1)]          # months to refi <= N -> points (sweet spot is 7 to 18)
+SIZE_PTS = [(20e6, 3), (5e6, 2), (1.5e6, 1)]               # loan >= $N -> points
+STRESS_PTS = [(1.0, 3), (1.2, 2), (1.35, 1)]               # worst-case DSCR < N -> points
+PRIORITY_TIERS = [(6, "Call now"), (4, "Worth a call"), (2, "Watch")]
+
+
+def _num(x):
+    return None if x is None or (isinstance(x, float) and math.isnan(x)) else float(x)
+
+
+def prospect_lever(out, months, principal, price, noi_known):
+    """DSCR range across the two scenarios, a 0-9 prospect score and a data-confidence rating."""
+    ins, conv = _num(out.get("DSCR at Renewal (base)")), _num(out.get("Conv DSCR at Renewal"))
+    vals = [v for v in (ins, conv) if v is not None]
+    lo, hi = (min(vals), max(vals)) if vals else (None, None)
+    cls = out.get("Financing Class", "")
+    stress = ins if cls == "Likely insured" and ins is not None else conv if cls == "Likely conventional" and conv is not None else lo
+
+    t = next((p for lim, p in TIMING_PTS if months <= lim), 0)
+    z = next((p for lim, p in SIZE_PTS if principal >= lim), 0)
+    st = 0 if stress is None else next((p for lim, p in STRESS_PTS if stress < lim), 0)
+    score = t + z + st
+    tier = next((name for lim, name in PRIORITY_TIERS if score >= lim), "Low")
+
+    doubts = []
+    if not noi_known:
+        doubts.append("no NOI")
+    if cls.startswith("Unknown"):
+        doubts.append("financing type unknown")
+    if price and principal > float(price):
+        doubts.append("amount exceeds sale price")
+    if ins is not None and conv is not None and (ins >= 1.2) != (conv >= 1.2):
+        doubts.append("scenarios disagree")
+    conf = "High" if not doubts else "Medium" if len(doubts) == 1 else "Low"
+    why = (f"timing +{t} ({months} mo), size +{z} (${principal / 1e6:.1f}M), stress +{st} "
+           f"({'DSCR %.2f' % stress if stress is not None else 'no NOI'})"
+           + (f"; doubts: {', '.join(doubts)}" if doubts else ""))
+    return {"DSCR Range Low": lo, "DSCR Range High": hi, "Prospect Score": score, "Prospect Priority": tier,
+            "Data Confidence": conf, "Priority Why": why}
 
 
 def load_overrides(cfg, base):
@@ -690,6 +733,7 @@ def scenario_columns(model, res, rec, cfg, override=None):
     if noi:
         notes.append("NOI = sale price x cap rate at sale (not current)")
     out["Rate Model Note"] = "; ".join(notes)
+    out.update(prospect_lever(out, res["months"], principal, price if pd.notna(price) else None, bool(noi)))
     return out
 
 
@@ -784,6 +828,10 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         if res["mortgage"]:
             dm = res["mortgage"]
             out["Refi Mortgage"] = f"{dm.get('lender')} | {dm['date']:%d/%m/%Y} | ${_amt(dm):,.0f}"
+        if res["signal"] == "Past term, likely renewed":
+            out.update({"Prospect Priority": "Renewal watch",
+                        "Priority Why": f"past term; assumed renewed, next maturity est. {res['renewal_date']:%b %Y} "
+                                        f"({res['renewal_months']} mo); term and renewal not visible on title"})
         if res["renewal_date"]:
             out.update({"Renewal Est. Date": res["renewal_date"].strftime("%b %Y"),
                         "Renewal Est. Months": res["renewal_months"]})
@@ -872,6 +920,12 @@ def write_excel(path, main, detail, discharges, exceptions, cmb, extra=None):
                         c.number_format = "0.00%"
                     elif head.endswith("(%)"):
                         c.number_format = "0.00"
+            if ws.title == "Sheet1" and "Prospect Priority" in [c.value for c in ws[1]]:
+                pi = [c.value for c in ws[1]].index("Prospect Priority") + 1
+                tier_fill = {"Call now": "A9D08E", "Worth a call": "FFE699", "Watch": "EDEDED", "Renewal watch": "DDEBF7"}
+                for row in ws.iter_rows(min_row=2, min_col=pi, max_col=pi):
+                    if row[0].value in tier_fill:
+                        row[0].fill = PatternFill("solid", start_color=tier_fill[row[0].value])
             if ws.title == "Sheet1":
                 ci = [c.value for c in ws[1]].index("Refi Include") + 1
                 for row in ws.iter_rows(min_row=2, min_col=ci, max_col=ci):
