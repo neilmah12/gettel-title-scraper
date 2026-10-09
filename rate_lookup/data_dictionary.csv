@@ -1,0 +1,28 @@
+column,meaning,units,source,confidence
+date,Calendar date (lookup key). Weekends and holidays repeat the previous observation.,date,-,-
+goc_5y_pct,"Government of Canada 5-year benchmark bond yield, last observation on or before the date.",%,Bank of Canada V39053 (= BD.CDN.5YR.DQ.YLD),Hard data
+goc_obs_date,Date of the GoC observation actually used.,date,Bank of Canada,Hard data
+cmb_spread_bps,"Canada Mortgage Bond 5-year spread over the GoC, held constant from each quarterly issue date until the next issue.",bps,Bank of Canada published (2024-03 onward); issue yield minus GoC close (before 2024),"Hard data, two methods up to ~6 bps apart"
+cmb_issue_date,Date of the CMB issue whose spread applies.,date,Canada Housing Trust issues,Hard data
+cmb_spread_method,boc_published or calc_daily_close.,text,-,-
+cmb_yield_est_pct,GoC 5-yr + CMB spread: estimated 5-year CMB yield (not the lender's rate).,%,Derived,Derived
+ins_lender_low_bps,"Lender spread over CMB for CMHC-insured multifamily, low case (sharpest pricing).",bps,CMLS commentary through 2024Q1; assumed after,See ins_confidence
+ins_lender_base_bps,"Same, base (typical) case.",bps,As above,See ins_confidence
+ins_lender_high_bps,"Same, high case.",bps,As above,See ins_confidence
+ins_all_in_low_pct,"INSURED estimate, low: GoC + CMB spread + lender low.",%,Derived,Estimate
+ins_all_in_base_pct,"INSURED estimate, base: GoC + CMB spread + lender base. Use this as the headline insured rate.",%,Derived,Estimate
+ins_all_in_high_pct,"INSURED estimate, high: GoC + CMB spread + lender high.",%,Derived,Estimate
+ins_confidence,Confidence in the lender-spread band for that quarter (sourced / partly sourced / estimated / assumed).,text,-,-
+conv_spread_low_bps,"Conventional (uninsured) multifamily spread over the GoC, low case.",bps,CMLS / Intellifi commentary through 2023; estimated after,See conv_confidence
+conv_spread_base_bps,"Same, base case.",bps,As above,See conv_confidence
+conv_spread_high_bps,"Same, high case.",bps,As above,See conv_confidence
+conv_all_in_low_pct,"CONVENTIONAL estimate, low: GoC + conventional spread low.",%,Derived,Estimate
+conv_all_in_base_pct,"CONVENTIONAL estimate, base: GoC + conventional spread base. Headline conventional rate.",%,Derived,Estimate
+conv_all_in_high_pct,"CONVENTIONAL estimate, high.",%,Derived,Estimate
+conv_confidence,Confidence in the conventional spread band for that quarter.,text,-,-
+ins_all_in_base_lag30_pct,"INSURED base estimate 30 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
+ins_all_in_base_lag60_pct,"INSURED base estimate 60 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
+ins_all_in_base_lag90_pct,"INSURED base estimate 90 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
+conv_all_in_base_lag30_pct,"CONVENTIONAL base estimate 30 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
+conv_all_in_base_lag60_pct,"CONVENTIONAL base estimate 60 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
+conv_all_in_base_lag90_pct,"CONVENTIONAL base estimate 90 days BEFORE the date. Rates are usually locked weeks before a sale closes or a mortgage registers, so test these as sensitivities.",%,Derived,Estimate
