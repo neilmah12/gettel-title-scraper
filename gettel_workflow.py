@@ -587,7 +587,8 @@ def load_cmb_table(cfg, log=print):
         keys = [k.strftime("%b %Y") if isinstance(k, (datetime, pd.Timestamp)) else str(k).strip() for k in df[key]]
         return dict(zip(keys, zip(df[rate], df[tier])))
     except Exception as e:
-        log(f"[WARN] CMB table not loaded from {path}: {e}")
+        log(f"[INFO] No legacy CMB table in {os.path.basename(path)} ({type(e).__name__}: {e}); "
+            "5 Yr CMB and Risk left blank. The rate model columns do not need it.")
         return {}
 
 
@@ -715,17 +716,20 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
                 flags.append("Title certified before the sale date; order a newer title")
         out.update({"Refi Include": res["include"], "Refi Signal": res["signal"], "Refi Flag": "; ".join(flags),
                     "Term Assumed (yrs)": res["term"], "Title Age (months)": age})
+        if res["mortgage"]:
+            dm = res["mortgage"]
+            out["Refi Mortgage"] = f"{dm.get('lender')} | {dm['date']:%d/%m/%Y} | ${_amt(dm):,.0f}"
         if res["renewal_date"]:
             out.update({"Renewal Est. Date": res["renewal_date"].strftime("%b %Y"),
                         "Renewal Est. Months": res["renewal_months"]})
         if res["refi_date"]:
             key = res["refi_date"].strftime("%b %Y")
             rate, tier = cmb.get(key, (None, None))
-            if key not in cmb:
+            if cmb and key not in cmb:
                 missing_cmb.add(key)
             out.update({"Refi Window": refi_window_label(res["months"]), "Months to Refi": res["months"],
                         "Est. Refi Date": key, "5 Yr CMB": rate,
-                        "Risk": tier if tier is not None else "No CMB data"})
+                        "Risk": tier if tier is not None else ("No CMB data" if cmb else None)})
         if rate_model and res["include"] == "Yes":
             out.update(rate_columns(rate_model, res, rec, cfg))
         out.update({"Title File": info.file, "Title Certified": cert})
@@ -737,7 +741,7 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         rows.append(out)
 
     new_cols = pd.DataFrame(rows, index=db.index)
-    order = ["Refi Include", "Refi Signal", "Refi Flag", "Refi Window", "Months to Refi", "Est. Refi Date",
+    order = ["Refi Include", "Refi Signal", "Refi Mortgage", "Refi Flag", "Refi Window", "Months to Refi", "Est. Refi Date",
              "5 Yr CMB", "Risk"] + RATE_COLS + ["Term Assumed (yrs)", "Renewal Est. Date", "Renewal Est. Months",
              "Title File", "Title Certified", "Title Age (months)"] + [c for c in new_cols.columns if c.startswith("Mortgage")]
     new_cols = new_cols.reindex(columns=order)
