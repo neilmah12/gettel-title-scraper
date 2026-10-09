@@ -35,6 +35,30 @@ def load_tables(data_dir=DATA_DIR):
 
 
 # --------------------------------------------------------------------------- GoC yields
+def parse_boc_download(path):
+    """
+    Parse a Bank of Canada 'Selected Bond Yields' download (daily series first, then weekly and
+    monthly blocks). 'Bank holiday' rows are skipped. Returns a daily Series of yields (%).
+    """
+    rows, in_daily = {}, False
+    with open(path, encoding="utf-8-sig") as f:
+        for line in f:
+            line = line.strip()
+            if not in_daily:
+                in_daily = line.startswith("Date,V")
+                continue
+            if not line:
+                break                                   # blank line ends the daily block
+            d, _, v = (x.strip() for x in line.partition(","))
+            try:
+                rows[pd.Timestamp(d)] = float(v)
+            except ValueError:
+                continue
+    if not rows:
+        raise ValueError(f"No daily yields found in {path}")
+    return pd.Series(rows, name="goc_5y_yield").sort_index()
+
+
 def load_goc(csv_path, refresh=False, start="2021-12-01", log=print):
     """
     Daily GoC 5-yr yield (%) as a Series. Reads csv_path (columns date,yield) when it exists.
@@ -42,6 +66,9 @@ def load_goc(csv_path, refresh=False, start="2021-12-01", log=print):
     A failed pull falls back to the saved file.
     """
     def read_cache():
+        with open(csv_path, encoding="utf-8-sig") as f:
+            if f.readline().startswith("Selected Bond Yields"):
+                return parse_boc_download(csv_path)       # raw Bank of Canada download
         df = pd.read_csv(csv_path, parse_dates=[0])
         return pd.Series(df.iloc[:, 1].astype(float).values, index=df.iloc[:, 0], name="goc_5y_yield").sort_index()
 

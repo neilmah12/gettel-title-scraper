@@ -15,6 +15,27 @@ def daily(goc_flat=3.0):
     return rr.build_daily_series(pd.Series(goc_flat, index=idx), rr.load_tables())
 
 
+class GocDataTests(unittest.TestCase):
+    """Uses data/goc_5y.csv (Bank of Canada V39053, the same series as BD.CDN.5YR.DQ.YLD)."""
+
+    def test_calculated_cmb_spreads_match_issue_yield_minus_goc_close(self):
+        goc = rr.load_goc(os.path.join(rr.DATA_DIR, "goc_5y.csv"))
+        cmb, _ = rr.load_tables()
+        for r in cmb[cmb.calc_daily_close_bps.notna() & cmb.boc_published_bps.isna()].itertuples():
+            close = goc.loc[: r.issue_date].iloc[-1]
+            self.assertAlmostEqual((r.issue_yield_pct - close) * 100, r.calc_daily_close_bps, places=1)
+
+    def test_raw_bank_of_canada_download_parses(self):
+        import tempfile
+        raw = ("Selected Bond Yields\n\nDaily series: x\nV39053 = GoC 5 Year\n\nSummary,Date,V39053\nLow,x,0.75\n\n"
+               "Date,V39053\n2026-10-08, 3.60\n2026-09-30, Bank holiday\n2026-09-29, 3.69\n\n\nWeekly series\nDate,V80\n2026-10-07, 3.60\n")
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as f:
+            f.write(raw)
+        s = rr.parse_boc_download(f.name)
+        os.unlink(f.name)
+        self.assertEqual(list(s.values), [3.69, 3.60])
+
+
 class RateTests(unittest.TestCase):
     def test_tables_load(self):
         cmb, band = rr.load_tables()

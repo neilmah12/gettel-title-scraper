@@ -28,7 +28,7 @@ import shutil
 import sys
 import traceback
 import difflib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -673,7 +673,14 @@ def build_output(cfg, manifest, mortgages, discharges, org_report=None, log=prin
         try:
             import refi_rates as rr
             tables = rr.load_tables()
-            goc = rr.load_goc(resolve(base, cfg.get("goc_csv") or "goc_5y.csv"), cfg.get("refresh_goc", False), log=log)
+            goc_path = resolve(base, cfg.get("goc_csv") or "goc_5y.csv")
+            if not os.path.exists(goc_path) and os.path.exists(os.path.join(rr.DATA_DIR, "goc_5y.csv")):
+                goc_path = os.path.join(rr.DATA_DIR, "goc_5y.csv")     # seed file shipped with the repo
+            goc = rr.load_goc(goc_path, cfg.get("refresh_goc", False), log=log)
+            if goc.index.max().date() < as_of - timedelta(days=7):
+                exceptions.append(("GoC data is stale", "", os.path.basename(goc_path),
+                                   f"Last yield {goc.index.max().date()}; renewal rates use it as 'current market'. "
+                                   "Update goc_5y.csv (Bank of Canada download or refresh_goc)."))
             rate_model = (rr, rr.build_daily_series(goc, tables), tables)
         except Exception as e:
             exceptions.append(("Rate model skipped", "", "", f"{type(e).__name__}: {e}"))
