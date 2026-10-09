@@ -18,8 +18,25 @@ class FinancingTests(unittest.TestCase):
     def test_custodian_with_originator_and_high_ltv_is_likely_insured(self):
         m = mtg("COMPUTERSHARE TRUST COMPANY OF CANADA", date(2023, 9, 22), 80_893_080, "CANADA ICI CAPITAL CORPORATION")
         score, cls, ev = fin.classify(m, 91_600_000, date(2023, 9, 22))
-        self.assertEqual((score, cls), (8, "Likely insured"))
+        self.assertEqual((score, cls), (9, "Likely insured"))
         self.assertIn("Canada Ici", ev)
+
+    def test_low_leverage_leans_conventional(self):
+        m = mtg("SERVUS CREDIT UNION LTD", date(2023, 10, 13), 900_000)
+        score, cls, ev = fin.classify(m, 1_697_500, date(2023, 10, 13))
+        self.assertEqual((score, cls), (-3, "Unknown (leans conventional)"))
+        self.assertIn("typical conventional leverage", ev)
+
+    def test_leverage_between_65_and_75_is_neutral(self):
+        self.assertEqual(fin.classify(mtg("ATB FINANCIAL", date(2023, 1, 1), 700_000), 1_000_000, date(2023, 1, 1))[0], 0)
+
+    def test_high_leverage_from_unspecialised_lender_leans_insured(self):
+        score, cls, _ = fin.classify(mtg("PEOPLES TRUST COMPANY", date(2023, 11, 17), 1_761_475), 1_920_000, date(2023, 10, 17))
+        self.assertEqual((score, cls), (6, "Unknown (leans insured)"))
+
+    def test_ltv_ignored_for_refinance_or_amount_above_price(self):
+        self.assertIsNone(fin.title_ltv(mtg("X", date(2025, 1, 1), 1_000_000), 2_000_000, date(2023, 1, 1)))
+        self.assertIsNone(fin.title_ltv(mtg("X", date(2023, 1, 1), 3_000_000), 2_000_000, date(2023, 1, 1)))
 
     def test_custodian_without_originator_is_unknown(self):
         score, cls, _ = fin.classify(mtg("COMPUTERSHARE TRUST COMPANY OF CANADA", date(2018, 1, 11), 15_203_161), None, None)
@@ -51,6 +68,7 @@ class FinancingTests(unittest.TestCase):
         self.assertEqual(fin.combine_status("Likely conventional", "ok", "distressed"), "distressed")
         self.assertEqual(fin.combine_status("Unknown", "ok", "ok"), "ok")
         self.assertIn("Uncertain", fin.combine_status("Unknown", "ok", "distressed"))
+        self.assertTrue(fin.combine_status("Unknown (leans conventional)", "ok", "distressed").endswith("leans conventional"))
 
 
 class ParserCoTests(unittest.TestCase):

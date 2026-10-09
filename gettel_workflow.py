@@ -618,7 +618,7 @@ RATE_COLS = ["Orig Rate Low (%)", "Orig Rate Base (%)", "Orig Rate High (%)",
              "Renewal Rate Low (%)", "Renewal Rate Base (%)", "Renewal Rate High (%)",
              "Payment Shock Base (%)", "DSCR at Renewal (base)", "Insured Status", "Rate Confidence",
              "Conv Orig Rate (%)", "Conv Renewal Rate (%)", "Conv Payment Shock (%)", "Conv DSCR at Renewal",
-             "Conv Status", "Financing Class", "Financing Score", "Financing Evidence", "Distress Status",
+             "Conv Status", "Financing Class", "Financing Score", "Title LTV", "Financing Evidence", "Distress Status",
              "Rate Model Note"]
 
 
@@ -681,7 +681,9 @@ def scenario_columns(model, res, rec, cfg, override=None):
     if override and override[0]:
         cls = {"insured": "Likely insured", "conventional": "Likely conventional"}.get(override[0].lower(), cls)
         evidence = f"Manual override ({override[0]}{': ' + override[1] if override[1] else ''}); {evidence}"
+    sd = sdate.date() if pd.notna(sdate) else None
     out.update({"Financing Class": cls, "Financing Score": score, "Financing Evidence": evidence,
+                "Title LTV": fin.title_ltv(m, float(price) if pd.notna(price) else None, sd),
                 "Distress Status": fin.combine_status(cls, (r_i or {}).get("status", "n/a"), (r_c or {}).get("status", "n/a"))})
     notes.append(f"Principal = registered amount; insured {cfg.get('amort_years', 40)}-yr vs conventional "
                  f"{cfg.get('conv_amort_years', 25)}-yr amortization assumed")
